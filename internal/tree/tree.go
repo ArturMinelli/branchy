@@ -1,0 +1,133 @@
+package tree
+
+import (
+	"fmt"
+	"os"
+	"sort"
+
+	"gopkg.in/yaml.v3"
+)
+
+// BranchNode is one node in the branch hierarchy.
+type BranchNode struct {
+	Children []string `yaml:"children"`
+}
+
+// Document is the on-disk branch-tree.yaml shape.
+type Document struct {
+	Branches map[string]BranchNode `yaml:"branches"`
+}
+
+// Edge is a parent→child sync pair.
+type Edge struct {
+	Parent string
+	Child  string
+}
+
+// Load reads a branch-tree.yaml file.
+func Load(path string) (*Document, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var doc Document
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("parse branch tree: %w", err)
+	}
+	if doc.Branches == nil {
+		doc.Branches = map[string]BranchNode{}
+	}
+	return &doc, nil
+}
+
+// Save writes a branch-tree.yaml file.
+func (d *Document) Save(path string) error {
+	data, err := yaml.Marshal(d)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0o644)
+}
+
+// Names returns all branch names sorted.
+func (d *Document) Names() []string {
+	names := make([]string, 0, len(d.Branches))
+	for name := range d.Branches {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// Roots returns branches that are never listed as a child.
+func (d *Document) Roots() []string {
+	childOf := map[string]bool{}
+	for _, node := range d.Branches {
+		for _, child := range node.Children {
+			childOf[child] = true
+		}
+	}
+	var roots []string
+	for name := range d.Branches {
+		if !childOf[name] {
+			roots = append(roots, name)
+		}
+	}
+	sort.Strings(roots)
+	return roots
+}
+
+// CollectEdges returns all parent→child edges below root (DFS).
+func (d *Document) CollectEdges(root string) []Edge {
+	var edges []Edge
+	d.collectEdges(root, &edges)
+	return edges
+}
+
+func (d *Document) collectEdges(parent string, edges *[]Edge) {
+	node, ok := d.Branches[parent]
+	if !ok {
+		return
+	}
+	children := append([]string(nil), node.Children...)
+	sort.Strings(children)
+	for _, child := range children {
+		*edges = append(*edges, Edge{Parent: parent, Child: child})
+		d.collectEdges(child, edges)
+	}
+}
+
+// Link adds parent→child edge; creates nodes if missing.
+func (d *Document) Link(parent, child string) error {
+	if parent == "" || child == "" {
+		return fmt.Errorf("parent and child are required")
+	}
+	if parent == child {
+		return fmt.Errorf("parent and child must differ")
+	}
+
+	if _, ok := d.Branches[parent]; !ok {
+		d.Branches[parent] = BranchNode{}
+	}
+	if _, ok := d.Branches[child]; !ok {
+		d.Branches[child] = BranchNode{}
+	}
+
+	node := d.Branches[parent]
+	for _, existing := range node.Children {
+		if existing == child {
+			return fmt.Errorf("edge already exists: %s → %s", parent, child)
+		}
+	}
+	node.Children = append(node.Children, child)
+	sort.Strings(node.Children)
+	d.Branches[parent] = node
+	return nil
+}
+
+// EnsureNode creates an empty branch entry if missing.
+func (d *Document) EnsureNode(name string) {
+	if _, ok := d.Branches[name]; !ok {
+		d.Branches[name] = BranchNode{}
+	}
+}
