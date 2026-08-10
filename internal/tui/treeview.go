@@ -34,12 +34,18 @@ type BranchTreeView struct {
 }
 
 func newBranchTreeView(doc *tree.Document) BranchTreeView {
+	if doc == nil {
+		return BranchTreeView{}
+	}
 	return BranchTreeView{
 		rows: flattenTree(doc),
 	}
 }
 
 func flattenTree(doc *tree.Document) []branchRow {
+	if doc == nil {
+		return nil
+	}
 	roots := doc.Roots()
 	rows := make([]branchRow, 0, len(doc.Branches))
 	for i, root := range roots {
