@@ -40,14 +40,6 @@ func (i projectItem) Title() string       { return i.id }
 func (i projectItem) Description() string { return i.path }
 func (i projectItem) FilterValue() string { return i.id + " " + i.path }
 
-type branchItem struct {
-	name string
-}
-
-func (i branchItem) Title() string       { return i.name }
-func (i branchItem) Description() string { return "" }
-func (i branchItem) FilterValue() string { return i.name }
-
 // Model is the root Bubble Tea model.
 type Model struct {
 	screen      screen
@@ -55,7 +47,7 @@ type Model struct {
 	height      int
 	projects    []*project.Project
 	projectList list.Model
-	branchList  list.Model
+	treeView    BranchTreeView
 	current     *project.Project
 	syncFrom    string
 	syncSummary *sync.Summary
@@ -119,16 +111,13 @@ func newModel(projects []*project.Project, preselected *project.Project) Model {
 	pl.SetShowStatusBar(false)
 	pl.SetFilteringEnabled(false)
 
-	bl := list.New(nil, list.NewDefaultDelegate(), 0, 0)
-	bl.Title = "Branch Tree"
-	bl.SetShowStatusBar(false)
-	bl.SetFilteringEnabled(true)
+	bl := newBranchTreeView(nil)
 
 	m := Model{
 		screen:      screenProjectPicker,
 		projects:    projects,
 		projectList: pl,
-		branchList:  bl,
+		treeView:    bl,
 	}
 
 	if preselected != nil {
@@ -149,8 +138,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.projectList.SetWidth(msg.Width)
 		m.projectList.SetHeight(msg.Height - 4)
-		m.branchList.SetWidth(msg.Width)
-		m.branchList.SetHeight(msg.Height - 8)
+		m.treeView.width = msg.Width
 		return m, nil
 
 	case tea.KeyMsg:
@@ -178,8 +166,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.screen {
 	case screenProjectPicker:
 		m.projectList, cmd = m.projectList.Update(msg)
-	case screenTree:
-		m.branchList, cmd = m.branchList.Update(msg)
 	default:
 	}
 	return m, cmd
@@ -203,12 +189,10 @@ func (m Model) View() string {
 		if m.current != nil {
 			b.WriteString(helpStyle.Render(m.current.ID + " — " + m.current.Path))
 			b.WriteString("\n\n")
-			b.WriteString(m.current.Tree.RenderASCII())
+			b.WriteString(m.treeView.View())
 			b.WriteString("\n")
 		}
-		b.WriteString(m.branchList.View())
-		b.WriteString("\n")
-		b.WriteString(helpStyle.Render("s: sync  l: link  esc: projects  q: quit"))
+		b.WriteString(helpStyle.Render("↑/↓: navigate  s: sync  l: link  esc: projects  q: quit"))
 	case screenSync:
 		b.WriteString(fmt.Sprintf("Sync from %s\n\n", m.syncFrom))
 		if m.syncSummary != nil {
@@ -264,12 +248,7 @@ func (m *Model) selectProject(p *project.Project) {
 	m.current = p
 	m.screen = screenTree
 	m.errMsg = ""
-
-	items := make([]list.Item, len(p.Tree.Names()))
-	for i, name := range p.Tree.Names() {
-		items[i] = branchItem{name: name}
-	}
-	m.branchList.SetItems(items)
+	m.treeView = newBranchTreeView(p.Tree)
 }
 
 func (m Model) updateProjectPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -305,8 +284,8 @@ func (m Model) updateTree(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if key.Matches(msg, keys.Sync) {
-		if item, ok := m.branchList.SelectedItem().(branchItem); ok {
-			m.syncFrom = item.name
+		if name := m.treeView.selectedName(); name != "" {
+			m.syncFrom = name
 			m.syncSummary = nil
 			m.screen = screenSync
 			m.errMsg = ""
@@ -314,23 +293,25 @@ func (m Model) updateTree(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if key.Matches(msg, keys.Link) {
-		parent := ""
-		if item, ok := m.branchList.SelectedItem().(branchItem); ok {
-			parent = item.name
-		}
-		m.linkParent = parent
+		m.linkParent = m.treeView.selectedName()
 		m.linkChild = ""
 		m.linkInput = 1
-		if parent == "" {
+		if m.linkParent == "" {
 			m.linkInput = 0
 		}
 		m.screen = screenLink
 		m.errMsg = ""
 		return m, nil
 	}
-	var cmd tea.Cmd
-	m.branchList, cmd = m.branchList.Update(msg)
-	return m, cmd
+	if key.Matches(msg, keys.Up) {
+		m.treeView.moveUp()
+		return m, nil
+	}
+	if key.Matches(msg, keys.Down) {
+		m.treeView.moveDown()
+		return m, nil
+	}
+	return m, nil
 }
 
 func (m Model) updateSync(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

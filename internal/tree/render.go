@@ -20,20 +20,24 @@ func (d *Document) RenderASCII() string {
 	}
 	var b strings.Builder
 	for i, root := range roots {
-		d.renderNode(&b, root, "", i == len(roots)-1)
+		d.renderNode(&b, root, "", i == len(roots)-1, true)
 	}
 	return b.String()
 }
 
-func (d *Document) renderNode(b *strings.Builder, name, prefix string, isLast bool) {
-	connector := "├── "
-	if isLast {
-		connector = "└── "
+func (d *Document) renderNode(b *strings.Builder, name, prefix string, isLast, isRoot bool) {
+	connector := ""
+	if !isRoot {
+		if isLast {
+			connector = "└── "
+		} else {
+			connector = "├── "
+		}
 	}
-	if prefix == "" {
+	if isRoot {
 		b.WriteString(branchStyle.Render(name))
 	} else {
-		b.WriteString(prefix + connector + branchStyle.Render(name))
+		b.WriteString(prefix + edgeStyle.Render(connector) + branchStyle.Render(name))
 	}
 	b.WriteString("\n")
 
@@ -44,16 +48,17 @@ func (d *Document) renderNode(b *strings.Builder, name, prefix string, isLast bo
 	children := append([]string(nil), node.Children...)
 	sort.Strings(children)
 
-	childPrefix := prefix
-	if prefix == "" {
+	var childPrefix string
+	switch {
+	case isRoot:
 		childPrefix = ""
-	} else if isLast {
+	case isLast:
 		childPrefix = prefix + "    "
-	} else {
+	default:
 		childPrefix = prefix + "│   "
 	}
 
 	for i, child := range children {
-		d.renderNode(b, child, childPrefix, i == len(children)-1)
+		d.renderNode(b, child, childPrefix, i == len(children)-1, false)
 	}
 }
