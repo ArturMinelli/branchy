@@ -2,6 +2,7 @@ package gitlab
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -26,6 +27,7 @@ func (c *Client) FindOpenMR(source, target string) (string, error) {
 		"mr", "list",
 		"--source-branch", source,
 		"--target-branch", target,
+		"--state", "opened",
 		"--per-page", "1",
 		"-F", "json",
 	)
@@ -51,6 +53,7 @@ func (c *Client) FindOpenMR(source, target string) (string, error) {
 }
 
 // CreateMR creates a merge request and returns its web URL.
+// If creation fails because an open MR already exists, it recovers that URL.
 func (c *Client) CreateMR(source, target, title, description string) (string, error) {
 	out, err := c.run(
 		"mr", "create",
@@ -61,6 +64,9 @@ func (c *Client) CreateMR(source, target, title, description string) (string, er
 		"--yes",
 	)
 	if err != nil {
+		if existing, findErr := c.FindOpenMR(source, target); findErr == nil && existing != "" {
+			return existing, errAlreadyExists
+		}
 		return "", err
 	}
 
@@ -70,6 +76,14 @@ func (c *Client) CreateMR(source, target, title, description string) (string, er
 	}
 
 	return c.FindOpenMR(source, target)
+}
+
+// errAlreadyExists is returned by CreateMR when an open MR was recovered after a create failure.
+var errAlreadyExists = fmt.Errorf("open MR already exists")
+
+// IsAlreadyExists reports whether err indicates an existing open MR was recovered.
+func IsAlreadyExists(err error) bool {
+	return err != nil && errors.Is(err, errAlreadyExists)
 }
 
 func (c *Client) run(args ...string) (string, error) {

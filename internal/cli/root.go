@@ -162,8 +162,8 @@ func runSyncCLI(cmd *cobra.Command) error {
 	}
 	fmt.Printf("\nDone — created: %d, skipped: %d, failed: %d\n", created, skipped, failed)
 
-	if urls := sync.CreatedURLs(summary); len(urls) > 0 {
-		fmt.Print("Open created MRs in browser? [y/N] ")
+	if urls := sync.OpenableURLs(summary); len(urls) > 0 {
+		fmt.Print("Open MRs in browser? [y/N] ")
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			return err

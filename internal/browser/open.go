@@ -5,9 +5,12 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"syscall"
 )
 
 // Open tries to open a URL in the system browser.
+// The child process is detached from the caller's process group so that
+// exiting a TUI (alt-screen) does not kill xdg-open before tabs open.
 func Open(url string) error {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
@@ -27,6 +30,13 @@ func Open(url string) error {
 
 	if cmd == nil {
 		return fmt.Errorf("could not open browser; URL: %s", url)
+	}
+
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	cmd.Stdin = nil
+	if runtime.GOOS != "windows" {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	}
 	return cmd.Start()
 }

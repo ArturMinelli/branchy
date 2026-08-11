@@ -106,9 +106,9 @@ From the main TUI, press `m` on a selected branch to start an MR with that branc
 
 ## Sync behavior
 
-For a chosen root branch, branchy walks the tree depth-first and prompts to create a GitLab MR for each parent→child edge (`parent` → `child`). In the TUI (`s` key or `branchy sync`), each edge is confirmed individually — there is no bulk "create all" step. Open MRs are skipped.
+For a chosen root branch, branchy walks the tree depth-first and prompts to create a GitLab MR for each parent→child edge (`parent` → `child`). In the TUI (`s` key or `branchy sync`), each edge is confirmed individually — there is no bulk "create all" step. Edges that already have an open MR are skipped (with the existing URL shown), not failed.
 
-After sync completes, if any MRs were created in the session, branchy asks whether to open them in the browser. Tabs open in tree order (created MRs only). The plain CLI behaves the same way: per-edge prompts (skipped with `-y`), then an optional end browser prompt.
+After sync completes, if any confirmed edges have an MR URL (newly created or already open), branchy asks whether to open them in the browser. Tabs open in tree order. User-declined edges are excluded. The plain CLI behaves the same way: per-edge prompts (skipped with `-y`), then an optional end browser prompt.
 
 ```bash
 branchy sync --from develop           # per-edge prompts + end browser prompt

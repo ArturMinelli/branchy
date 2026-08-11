@@ -161,6 +161,20 @@ func TestSyncFlowSummaryToBrowserWhenCreated(t *testing.T) {
 	}
 }
 
+func TestSyncFlowSummaryToBrowserWhenExistingSkip(t *testing.T) {
+	m := testSyncFlowAtConfirm()
+	m.step = stepSyncSummary
+	m.results = []sync.Result{{
+		Parent: "main", Child: "develop", Action: mr.ActionSkipped,
+		URL: "https://example.com/existing", Message: "open MR already exists",
+	}}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	flow := updated.(SyncFlowModel)
+	if flow.step != stepSyncBrowser {
+		t.Fatalf("expected stepSyncBrowser for existing MR URL, got %d", flow.step)
+	}
+}
+
 func TestSyncFlowSummarySkipsBrowserWhenNoCreates(t *testing.T) {
 	m := testSyncFlowAtConfirm()
 	m.step = stepSyncSummary
@@ -172,6 +186,23 @@ func TestSyncFlowSummarySkipsBrowserWhenNoCreates(t *testing.T) {
 	}
 	if cmd != nil {
 		t.Fatal("embedded finish should not quit program")
+	}
+}
+
+func TestSyncFlowBrowserWarnStaysOnStep(t *testing.T) {
+	m := testSyncFlowAtConfirm()
+	m.step = stepSyncBrowserLoading
+	m.results = []sync.Result{{Parent: "main", Child: "develop", Action: mr.ActionCreated, URL: "https://example.com/1"}}
+	updated, _ := m.Update(browserOpenResultMsg{warn: "could not open"})
+	flow := updated.(SyncFlowModel)
+	if flow.step != stepSyncBrowser {
+		t.Fatalf("expected return to browser step on warn, got %d", flow.step)
+	}
+	if flow.browserWarn == "" {
+		t.Fatal("expected browserWarn set")
+	}
+	if flow.finished {
+		t.Fatal("must not finish while warning is shown")
 	}
 }
 

@@ -122,7 +122,7 @@ func (m SyncFlowModel) resetEdgeConfirm() SyncFlowModel {
 
 func (m SyncFlowModel) resetBrowserConfirm() SyncFlowModel {
 	m.confirm = NewConfirm(ConfirmOptions{
-		Question: "Open created MRs in browser?",
+		Question: "Open MRs in browser?",
 		Width:    m.width,
 	})
 	return m
@@ -166,6 +166,8 @@ func (m SyncFlowModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = m.loading.Clear()
 		if msg.warn != "" {
 			m.browserWarn = msg.warn
+			m.step = stepSyncBrowser
+			return m.resetBrowserConfirm(), nil
 		}
 		return m.finish()
 
@@ -273,7 +275,7 @@ func (m SyncFlowModel) View() string {
 		b.WriteString(fmt.Sprintf("Sync from %s\n\n", m.fromBranch))
 		b.WriteString(m.renderResults())
 		b.WriteString("\n")
-		if len(sync.CreatedURLs(m.summary())) > 0 {
+		if len(sync.OpenableURLs(m.summary())) > 0 {
 			b.WriteString(RenderHelp("enter: continue  q: quit"))
 		} else if m.opts.Embedded {
 			b.WriteString(RenderHelp("enter/q: back to tree"))
@@ -284,7 +286,7 @@ func (m SyncFlowModel) View() string {
 		b.WriteString(fmt.Sprintf("Sync from %s\n\n", m.fromBranch))
 		b.WriteString(m.renderResults())
 		b.WriteString("\n")
-		for _, url := range sync.CreatedURLs(m.summary()) {
+		for _, url := range sync.OpenableURLs(m.summary()) {
 			b.WriteString("  " + url)
 			b.WriteString("\n")
 		}
@@ -429,7 +431,7 @@ func (m SyncFlowModel) updateSummary(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if key.Matches(msg, syncKeys.Enter) || key.Matches(msg, syncKeys.Back) {
-		if len(sync.CreatedURLs(m.summary())) > 0 {
+		if len(sync.OpenableURLs(m.summary())) > 0 {
 			m.step = stepSyncBrowser
 			return m.resetBrowserConfirm(), nil
 		}
@@ -451,9 +453,10 @@ func (m SyncFlowModel) updateBrowser(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	m.confirm, choice = m.confirm.Update(msg)
 	switch choice {
 	case ConfirmYes:
+		m.browserWarn = ""
 		m.step = stepSyncBrowserLoading
 		m.loading = NewLoading(LoadingOptions{Message: "Opening MRs in browser…"})
-		return m, tea.Batch(m.loading.Init(), runBrowserOpenCmd(sync.CreatedURLs(m.summary())))
+		return m, tea.Batch(m.loading.Init(), runBrowserOpenCmd(sync.OpenableURLs(m.summary())))
 	case ConfirmNo:
 		return m.finish()
 	}

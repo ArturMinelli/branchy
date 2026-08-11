@@ -98,6 +98,19 @@ func Create(p *project.Project, req CreateRequest) (*CreateResult, error) {
 
 	url, err := client.CreateMR(req.Source, req.Target, title, desc)
 	if err != nil {
+		// Race or glab quirk: treat recovered existing open MR as skip, not failure.
+		if gitlab.IsAlreadyExists(err) && url != "" {
+			res.Action = ActionSkipped
+			res.URL = url
+			res.Message = "open MR already exists"
+			return res, nil
+		}
+		if existing, findErr := client.FindOpenMR(req.Source, req.Target); findErr == nil && existing != "" {
+			res.Action = ActionSkipped
+			res.URL = existing
+			res.Message = "open MR already exists"
+			return res, nil
+		}
 		res.Action = ActionFailed
 		res.Message = err.Error()
 		return res, nil

@@ -82,6 +82,31 @@ func CreatedURLs(summary *Summary) []string {
 	return urls
 }
 
+// OpenableURLs returns MR URLs for confirmed edges in DFS order: newly created
+// MRs and edges skipped because an open MR already existed. User-declined and
+// failed edges without a URL are excluded.
+func OpenableURLs(summary *Summary) []string {
+	if summary == nil {
+		return nil
+	}
+	var urls []string
+	for _, r := range summary.Results {
+		if r.URL == "" {
+			continue
+		}
+		switch r.Action {
+		case mr.ActionCreated:
+			urls = append(urls, r.URL)
+		case mr.ActionSkipped:
+			if r.Message == "skipped by user" {
+				continue
+			}
+			urls = append(urls, r.URL)
+		}
+	}
+	return urls
+}
+
 // OpenURLs opens each URL sequentially in order. Returns a non-fatal warning if any open fails.
 func OpenURLs(urls []string) string {
 	if len(urls) == 0 {
@@ -90,7 +115,7 @@ func OpenURLs(urls []string) string {
 	var warnings []string
 	for i, url := range urls {
 		if i > 0 {
-			time.Sleep(50 * time.Millisecond)
+			time.Sleep(200 * time.Millisecond)
 		}
 		if err := browserOpen(url); err != nil {
 			warnings = append(warnings, fmt.Sprintf("could not open %s: %v", url, err))

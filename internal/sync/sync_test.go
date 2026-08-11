@@ -27,9 +27,35 @@ func TestCreatedURLsFiltersAndPreservesOrder(t *testing.T) {
 	}
 }
 
+func TestOpenableURLsIncludesExistingSkips(t *testing.T) {
+	summary := &Summary{
+		Results: []Result{
+			{Parent: "a", Child: "b", Action: "created", URL: "https://example.com/1"},
+			{Parent: "b", Child: "c", Action: "skipped", URL: "https://example.com/2", Message: "open MR already exists"},
+			{Parent: "c", Child: "d", Action: "skipped", Message: "skipped by user"},
+			{Parent: "d", Child: "e", Action: "failed", URL: ""},
+			{Parent: "e", Child: "f", Action: "created", URL: "https://example.com/3"},
+		},
+	}
+
+	got := OpenableURLs(summary)
+	want := []string{"https://example.com/1", "https://example.com/2", "https://example.com/3"}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d URLs, got %d: %v", len(want), len(got), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("index %d: expected %q, got %q", i, want[i], got[i])
+		}
+	}
+}
+
 func TestCreatedURLsNilSummary(t *testing.T) {
 	if got := CreatedURLs(nil); got != nil {
 		t.Fatalf("expected nil, got %v", got)
+	}
+	if got := OpenableURLs(nil); got != nil {
+		t.Fatalf("expected nil openable, got %v", got)
 	}
 }
 
