@@ -2,3 +2,7 @@
 *.exe
 *.test
 *.out
+
+# Cursor local state (speckit skills under .cursor/skills/ are tracked)
+.cursor/*
+!.cursor/skills/
