@@ -10,7 +10,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"branchy/internal/project"
-	"branchy/internal/sync"
 )
 
 var (
@@ -50,8 +49,7 @@ type Model struct {
 	projectList list.Model
 	treeView    BranchTreeView
 	current     *project.Project
-	syncFrom    string
-	syncSummary *sync.Summary
+	syncFlow    SyncFlowModel
 	linkParent  string
 	linkChild   string
 	linkInput   int
@@ -149,6 +147,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mrFlow.branchList.SetWidth(msg.Width)
 			m.mrFlow.branchList.SetHeight(msg.Height - 6)
 		}
+		if m.screen == screenSync {
+			m.syncFlow.width = msg.Width
+			m.syncFlow.height = msg.Height
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -162,7 +164,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case screenTree:
 			return m.updateTree(msg)
 		case screenSync:
-			return m.updateSync(msg)
+			var cmd tea.Cmd
+			var syncModel tea.Model
+			syncModel, cmd = m.syncFlow.Update(msg)
+			m.syncFlow = syncModel.(SyncFlowModel)
+			if m.syncFlow.finished {
+				m.screen = screenTree
+				m.syncFlow = SyncFlowModel{}
+			}
+			return m, cmd
 		case screenLink:
 			return m.updateLink(msg)
 		case screenMR:
@@ -198,6 +208,9 @@ func (m Model) View() string {
 	if m.screen == screenMR {
 		return m.mrFlow.View()
 	}
+	if m.screen == screenSync {
+		return m.syncFlow.View()
+	}
 
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("branchy"))
@@ -216,31 +229,6 @@ func (m Model) View() string {
 			b.WriteString("\n")
 		}
 		b.WriteString(helpStyle.Render("↑/↓: navigate  s: sync  m: mr  l: link  esc: projects  q: quit"))
-	case screenSync:
-		b.WriteString(fmt.Sprintf("Sync from %s\n\n", m.syncFrom))
-		if m.syncSummary != nil {
-			for _, r := range m.syncSummary.Results {
-				line := fmt.Sprintf("%s → %s: %s", r.Parent, r.Child, r.Action)
-				switch r.Action {
-				case "created":
-					line = okStyle.Render(line)
-				case "failed":
-					line = errStyle.Render(line + " — " + r.Message)
-				default:
-					line = warnStyle.Render(line)
-				}
-				b.WriteString(line)
-				if r.URL != "" {
-					b.WriteString("\n  " + r.URL)
-				}
-				b.WriteString("\n")
-			}
-			b.WriteString("\n")
-			b.WriteString(helpStyle.Render("enter/q: back to tree"))
-		} else {
-			b.WriteString("Press y to confirm sync, n to cancel\n")
-			b.WriteString(helpStyle.Render("y: confirm  n: cancel"))
-		}
 	case screenLink:
 		b.WriteString("Link branch\n\n")
 		parentMark, childMark := " ", " "
@@ -308,8 +296,9 @@ func (m Model) updateTree(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if key.Matches(msg, keys.Sync) {
 		if name := m.treeView.selectedName(); name != "" {
-			m.syncFrom = name
-			m.syncSummary = nil
+			m.syncFlow = newSyncFlowModel(m.current, name, SyncFlowOptions{Embedded: true})
+			m.syncFlow.width = m.width
+			m.syncFlow.height = m.height
 			m.screen = screenSync
 			m.errMsg = ""
 		}
@@ -348,37 +337,6 @@ func (m Model) updateTree(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if key.Matches(msg, keys.Down) {
 		m.treeView.moveDown()
-		return m, nil
-	}
-	return m, nil
-}
-
-func (m Model) updateSync(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.syncSummary != nil {
-		if key.Matches(msg, keys.Quit) || key.Matches(msg, keys.Enter) || key.Matches(msg, keys.Back) {
-			m.screen = screenTree
-			m.syncSummary = nil
-		}
-		return m, nil
-	}
-
-	if key.Matches(msg, keys.No) || key.Matches(msg, keys.Back) {
-		m.screen = screenTree
-		return m, nil
-	}
-	if key.Matches(msg, keys.Yes) || key.Matches(msg, keys.Enter) {
-		summary, err := sync.Run(m.current, sync.Options{
-			FromBranch: m.syncFrom,
-			Confirm: func(parent, child string) (bool, error) {
-				return true, nil
-			},
-		})
-		if err != nil {
-			m.errMsg = err.Error()
-			m.screen = screenTree
-			return m, nil
-		}
-		m.syncSummary = summary
 		return m, nil
 	}
 	return m, nil

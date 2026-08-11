@@ -2,6 +2,7 @@ package sync
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"branchy/internal/browser"
@@ -29,8 +30,9 @@ type Summary struct {
 type Options struct {
 	FromBranch string
 	Confirm    func(parent, child string) (bool, error)
-	OnStatus   func(msg string)
 }
+
+var browserOpen = browser.Open
 
 // Run creates MRs for each parent→child edge below FromBranch.
 func Run(p *project.Project, opts Options) (*Summary, error) {
@@ -52,24 +54,49 @@ func Run(p *project.Project, opts Options) (*Summary, error) {
 	}
 
 	summary := &Summary{}
-	var urls []string
 
 	for _, edge := range edges {
 		res := processEdge(p, edge, opts)
 		summary.Results = append(summary.Results, res)
-		if res.URL != "" && res.Action != "failed" {
-			urls = append(urls, res.URL)
-		}
-	}
-
-	if len(urls) > 0 && opts.OnStatus != nil {
-		opts.OnStatus(fmt.Sprintf("Opening %d MR(s) in browser...", len(urls)))
-	}
-	for _, url := range urls {
-		_ = browser.Open(url)
 	}
 
 	return summary, nil
+}
+
+// RunEdge creates an MR for a single edge without confirmation.
+func RunEdge(p *project.Project, edge tree.Edge) Result {
+	return processEdge(p, edge, Options{})
+}
+
+// CreatedURLs returns MR URLs for created results in DFS order.
+func CreatedURLs(summary *Summary) []string {
+	if summary == nil {
+		return nil
+	}
+	var urls []string
+	for _, r := range summary.Results {
+		if r.Action == mr.ActionCreated && r.URL != "" {
+			urls = append(urls, r.URL)
+		}
+	}
+	return urls
+}
+
+// OpenURLs opens each URL sequentially in order. Returns a non-fatal warning if any open fails.
+func OpenURLs(urls []string) string {
+	if len(urls) == 0 {
+		return ""
+	}
+	var warnings []string
+	for i, url := range urls {
+		if i > 0 {
+			time.Sleep(50 * time.Millisecond)
+		}
+		if err := browserOpen(url); err != nil {
+			warnings = append(warnings, fmt.Sprintf("could not open %s: %v", url, err))
+		}
+	}
+	return strings.Join(warnings, "; ")
 }
 
 func processEdge(p *project.Project, edge tree.Edge, opts Options) Result {

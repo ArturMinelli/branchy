@@ -119,7 +119,6 @@ var syncCmd = &cobra.Command{
 		summary, err := sync.Run(p, sync.Options{
 			FromBranch: from,
 			Confirm:    confirm,
-			OnStatus: func(msg string) { fmt.Println(msg) },
 		})
 		if err != nil {
 			return err
@@ -134,12 +133,31 @@ var syncCmd = &cobra.Command{
 			case "skipped":
 				skipped++
 				fmt.Printf("Skipped: %s → %s (%s)\n", r.Parent, r.Child, r.Message)
+				if r.URL != "" {
+					fmt.Printf("  %s\n", r.URL)
+				}
 			case "failed":
 				failed++
 				fmt.Printf("Failed: %s → %s — %s\n", r.Parent, r.Child, r.Message)
 			}
 		}
 		fmt.Printf("\nDone — created: %d, skipped: %d, failed: %d\n", created, skipped, failed)
+
+		if urls := sync.CreatedURLs(summary); len(urls) > 0 {
+			fmt.Print("Open created MRs in browser? [y/N] ")
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				return err
+			}
+			line = strings.TrimSpace(strings.ToLower(line))
+			if line == "y" || line == "yes" {
+				fmt.Printf("Opening %d MR(s) in browser...\n", len(urls))
+				if warn := sync.OpenURLs(urls); warn != "" {
+					fmt.Printf("Warning: %s\n", warn)
+				}
+			}
+		}
+
 		return nil
 	},
 }

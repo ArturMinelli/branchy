@@ -60,8 +60,8 @@ Opens the branch tree viewer. Keys:
 ```bash
 branchy mr                          # interactive TUI branch picker
 branchy mr --source A --target B -y   # create MR without TUI
-branchy sync --from develop           # interactive MR creation
-branchy sync --from develop -y        # create all without prompting
+branchy sync --from develop           # per-edge prompts + end browser prompt
+branchy sync --from develop -y        # skip per-edge prompts; browser prompts at end
 branchy link <parent> <child>         # add tree edge
 branchy projects                      # list registered projects
 ```
@@ -89,4 +89,11 @@ From the main TUI, press `m` on a selected branch to start an MR with that branc
 
 ## Sync behavior
 
-For a chosen root branch, branchy walks the tree depth-first and offers to create GitLab MRs for each parent→child edge (`parent` → `child`). Open MRs are skipped.
+For a chosen root branch, branchy walks the tree depth-first and prompts to create a GitLab MR for each parent→child edge (`parent` → `child`). In the TUI (`s` key), each edge is confirmed individually — there is no bulk "create all" step. Open MRs are skipped.
+
+After sync completes, if any MRs were created in the session, branchy asks whether to open them in the browser. Tabs open in tree order (created MRs only). The CLI behaves the same way: per-edge prompts (skipped with `-y`), then an optional end browser prompt.
+
+```bash
+branchy sync --from develop           # per-edge prompts + end browser prompt
+branchy sync --from develop -y        # skip per-edge prompts; browser still prompts at end
+```
