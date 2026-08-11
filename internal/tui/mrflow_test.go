@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -78,6 +79,36 @@ func TestMRFlowTitleToConfirm(t *testing.T) {
 	flow := updated.(MRFlowModel)
 	if flow.step != stepMRConfirm {
 		t.Fatalf("expected stepMRConfirm, got %d", flow.step)
+	}
+}
+
+func TestMRFlowConfirmViewUsesPanel(t *testing.T) {
+	m := newMRFlowModel(testProject(), MROptions{})
+	m.source = "feature-x"
+	m.target = "develop"
+	m.title = "MR: feature-x → develop"
+	m.step = stepMRConfirm
+	m = m.resetMRConfirm()
+	view := m.View()
+	if strings.Contains(view, "[y/N]") {
+		t.Fatal("mr confirm view must not contain [y/N]")
+	}
+}
+
+func TestMRFlowYesEntersLoading(t *testing.T) {
+	m := newMRFlowModel(testProject(), MROptions{})
+	m.source = "feature-x"
+	m.target = "develop"
+	m.title = "MR: feature-x → develop"
+	m.step = stepMRConfirm
+	m = m.resetMRConfirm()
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	flow := updated.(MRFlowModel)
+	if flow.step != stepMRLoading {
+		t.Fatalf("expected stepMRLoading, got %d", flow.step)
+	}
+	if cmd == nil {
+		t.Fatal("expected async create command")
 	}
 }
 

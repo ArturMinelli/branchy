@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -41,6 +42,10 @@ func TestUpdateTreeUnlinkOpensConfirm(t *testing.T) {
 	}
 	if model.unlinkCount != 2 {
 		t.Fatalf("expected unlink count 2, got %d", model.unlinkCount)
+	}
+	view := model.View()
+	if strings.Contains(view, "[y/N]") {
+		t.Fatal("embedded unlink confirm must not contain [y/N]")
 	}
 }
 

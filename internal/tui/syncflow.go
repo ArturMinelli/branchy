@@ -23,6 +23,7 @@ const (
 	stepSyncProcessing
 	stepSyncSummary
 	stepSyncBrowser
+	stepSyncBrowserLoading
 	stepSyncEmpty
 	stepSyncError
 )
@@ -34,18 +35,20 @@ type SyncFlowOptions struct {
 
 // SyncFlowModel is a multi-step Bubble Tea model for interactive sync.
 type SyncFlowModel struct {
-	project    *project.Project
-	opts       SyncFlowOptions
-	fromBranch string
-	edges      []tree.Edge
-	edgeIndex  int
-	results    []sync.Result
-	step       syncStep
-	errMsg     string
+	project     *project.Project
+	opts        SyncFlowOptions
+	fromBranch  string
+	edges       []tree.Edge
+	edgeIndex   int
+	results     []sync.Result
+	step        syncStep
+	errMsg      string
 	browserWarn string
-	branchList list.Model
-	cancelled  bool
-	finished   bool
+	branchList  list.Model
+	confirm     ConfirmModel
+	loading     LoadingModel
+	cancelled   bool
+	finished    bool
 	flowWindow
 }
 
@@ -103,6 +106,25 @@ func (m SyncFlowModel) prepareSyncFrom(fromBranch string) SyncFlowModel {
 
 	m.edges = edges
 	m.step = stepSyncEdgeConfirm
+	return m.resetEdgeConfirm()
+}
+
+func (m SyncFlowModel) resetEdgeConfirm() SyncFlowModel {
+	edge := m.currentEdge()
+	m.confirm = NewConfirm(ConfirmOptions{
+		Context:  []string{fmt.Sprintf("Sync from %s", m.fromBranch)},
+		Question: fmt.Sprintf("Create MR %s → %s?", edge.Parent, edge.Child),
+		Progress: fmt.Sprintf("Edge %d of %d", m.edgeIndex+1, len(m.edges)),
+		Width:    m.width,
+	})
+	return m
+}
+
+func (m SyncFlowModel) resetBrowserConfirm() SyncFlowModel {
+	m.confirm = NewConfirm(ConfirmOptions{
+		Question: "Open created MRs in browser?",
+		Width:    m.width,
+	})
 	return m
 }
 
@@ -122,19 +144,36 @@ func (m SyncFlowModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.onResize(msg)
 		m.branchList.SetWidth(msg.Width)
 		m.branchList.SetHeight(msg.Height - 6)
+		if m.step == stepSyncEdgeConfirm {
+			m = m.resetEdgeConfirm()
+		} else if m.step == stepSyncBrowser {
+			m = m.resetBrowserConfirm()
+		}
 		return m, nil
 
 	case edgeResultMsg:
+		m.loading = m.loading.Clear()
 		m.results = append(m.results, msg.result)
 		m.edgeIndex++
 		if m.edgeIndex < len(m.edges) {
 			m.step = stepSyncEdgeConfirm
-			return m, nil
+			return m.resetEdgeConfirm(), nil
 		}
 		m.step = stepSyncSummary
 		return m, nil
 
+	case browserOpenResultMsg:
+		m.loading = m.loading.Clear()
+		if msg.warn != "" {
+			m.browserWarn = msg.warn
+		}
+		return m.finish()
+
 	case tea.KeyMsg:
+		if m.step == stepSyncProcessing || m.step == stepSyncBrowserLoading {
+			return m, nil
+		}
+
 		if m.tooSmall {
 			if key.Matches(msg, flowKeys.Quit) || key.Matches(msg, flowKeys.Enter) {
 				m.finished = true
@@ -159,6 +198,12 @@ func (m SyncFlowModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m.finish()
 			}
 		}
+	}
+
+	if m.step == stepSyncProcessing || m.step == stepSyncBrowserLoading {
+		var cmd tea.Cmd
+		m.loading, cmd = m.loading.Update(msg)
+		return m, cmd
 	}
 
 	if m.step == stepSyncPickRoot {
@@ -218,15 +263,12 @@ func (m SyncFlowModel) View() string {
 		b.WriteString("\n")
 		b.WriteString(RenderHelp("↑/↓: navigate  enter: select  esc: cancel  q: quit"))
 	case stepSyncEdgeConfirm:
-		edge := m.currentEdge()
-		b.WriteString(fmt.Sprintf("Sync from %s\n\n", m.fromBranch))
-		b.WriteString(fmt.Sprintf("Create MR %s → %s? [y/N]\n", edge.Parent, edge.Child))
-		b.WriteString(fmt.Sprintf("(edge %d of %d)\n\n", m.edgeIndex+1, len(m.edges)))
-		b.WriteString(RenderHelp("y: create  n: skip  esc: cancel remaining  q: quit"))
+		b.WriteString(m.confirm.View())
+		b.WriteString("\n")
+		b.WriteString(RenderHelp("esc: cancel remaining  q: quit"))
 	case stepSyncProcessing:
-		edge := m.currentEdge()
 		b.WriteString(fmt.Sprintf("Sync from %s\n\n", m.fromBranch))
-		b.WriteString(fmt.Sprintf("Creating MR %s → %s...\n", edge.Parent, edge.Child))
+		b.WriteString(m.loading.View())
 	case stepSyncSummary:
 		b.WriteString(fmt.Sprintf("Sync from %s\n\n", m.fromBranch))
 		b.WriteString(m.renderResults())
@@ -242,7 +284,6 @@ func (m SyncFlowModel) View() string {
 		b.WriteString(fmt.Sprintf("Sync from %s\n\n", m.fromBranch))
 		b.WriteString(m.renderResults())
 		b.WriteString("\n")
-		b.WriteString("Open created MRs in browser? [y/N]\n\n")
 		for _, url := range sync.CreatedURLs(m.summary()) {
 			b.WriteString("  " + url)
 			b.WriteString("\n")
@@ -252,7 +293,10 @@ func (m SyncFlowModel) View() string {
 			b.WriteString(warnStyle.Render(m.browserWarn))
 			b.WriteString("\n\n")
 		}
-		b.WriteString(RenderHelp("y: open  n/enter: done  q: quit"))
+		b.WriteString(m.confirm.View())
+	case stepSyncBrowserLoading:
+		b.WriteString(fmt.Sprintf("Sync from %s\n\n", m.fromBranch))
+		b.WriteString(m.loading.View())
 	case stepSyncEmpty:
 		b.WriteString(warnStyle.Render(fmt.Sprintf("No child branches below %q.", m.fromBranch)))
 		b.WriteString("\n\n")
@@ -319,6 +363,10 @@ type edgeResultMsg struct {
 	result sync.Result
 }
 
+type browserOpenResultMsg struct {
+	warn string
+}
+
 func (m SyncFlowModel) updateEdgeConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, syncKeys.Quit) {
 		if m.opts.Embedded {
@@ -330,7 +378,19 @@ func (m SyncFlowModel) updateEdgeConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, syncKeys.Back) {
 		return m.cancelRemaining()
 	}
-	if key.Matches(msg, syncKeys.No) {
+
+	var choice ConfirmChoice
+	m.confirm, choice = m.confirm.Update(msg)
+	switch choice {
+	case ConfirmYes:
+		m.step = stepSyncProcessing
+		edge := m.currentEdge()
+		m.loading = NewLoading(LoadingOptions{
+			Message:  LoadingMessage("Creating MR", fmt.Sprintf("%s → %s", edge.Parent, edge.Child)),
+			Progress: fmt.Sprintf("Edge %d of %d", m.edgeIndex+1, len(m.edges)),
+		})
+		return m, tea.Batch(m.loading.Init(), runEdgeCmd(m.project, edge))
+	case ConfirmNo:
 		m.results = append(m.results, sync.Result{
 			Parent:  m.currentEdge().Parent,
 			Child:   m.currentEdge().Child,
@@ -339,15 +399,11 @@ func (m SyncFlowModel) updateEdgeConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		})
 		m.edgeIndex++
 		if m.edgeIndex < len(m.edges) {
-			return m, nil
+			m.step = stepSyncEdgeConfirm
+			return m.resetEdgeConfirm(), nil
 		}
 		m.step = stepSyncSummary
 		return m, nil
-	}
-	if key.Matches(msg, syncKeys.Yes) || key.Matches(msg, syncKeys.Enter) {
-		m.step = stepSyncProcessing
-		edge := m.currentEdge()
-		return m, runEdgeCmd(m.project, edge)
 	}
 	return m, nil
 }
@@ -355,6 +411,12 @@ func (m SyncFlowModel) updateEdgeConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func runEdgeCmd(p *project.Project, edge tree.Edge) tea.Cmd {
 	return func() tea.Msg {
 		return edgeResultMsg{result: sync.RunEdge(p, edge)}
+	}
+}
+
+func runBrowserOpenCmd(urls []string) tea.Cmd {
+	return func() tea.Msg {
+		return browserOpenResultMsg{warn: sync.OpenURLs(urls)}
 	}
 }
 
@@ -369,7 +431,7 @@ func (m SyncFlowModel) updateSummary(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, syncKeys.Enter) || key.Matches(msg, syncKeys.Back) {
 		if len(sync.CreatedURLs(m.summary())) > 0 {
 			m.step = stepSyncBrowser
-			return m, nil
+			return m.resetBrowserConfirm(), nil
 		}
 		return m.finish()
 	}
@@ -377,21 +439,23 @@ func (m SyncFlowModel) updateSummary(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m SyncFlowModel) updateBrowser(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if key.Matches(msg, syncKeys.Yes) {
-		if warn := sync.OpenURLs(sync.CreatedURLs(m.summary())); warn != "" {
-			m.browserWarn = warn
-		}
-		return m.finish()
-	}
-	if key.Matches(msg, syncKeys.No) || key.Matches(msg, syncKeys.Enter) || key.Matches(msg, syncKeys.Back) {
-		return m.finish()
-	}
 	if key.Matches(msg, syncKeys.Quit) {
 		if m.opts.Embedded {
 			return m.finish()
 		}
 		m.finished = true
 		return m, tea.Quit
+	}
+
+	var choice ConfirmChoice
+	m.confirm, choice = m.confirm.Update(msg)
+	switch choice {
+	case ConfirmYes:
+		m.step = stepSyncBrowserLoading
+		m.loading = NewLoading(LoadingOptions{Message: "Opening MRs in browser…"})
+		return m, tea.Batch(m.loading.Init(), runBrowserOpenCmd(sync.CreatedURLs(m.summary())))
+	case ConfirmNo:
+		return m.finish()
 	}
 	return m, nil
 }

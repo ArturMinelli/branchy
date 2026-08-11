@@ -27,6 +27,7 @@ type UnlinkFlowModel struct {
 	subtreeCount int
 	branchList   list.Model
 	errMsg       string
+	confirm      ConfirmModel
 	finished     bool
 	cancelled    bool
 	flowWindow
@@ -109,16 +110,7 @@ func (m UnlinkFlowModel) View() string {
 		b.WriteString("\n")
 		b.WriteString(RenderHelp("↑/↓: navigate  enter: select  esc: cancel  q: quit"))
 	case stepUnlinkConfirm:
-		label := "branch"
-		if m.subtreeCount != 1 {
-			label = "branches"
-		}
-		b.WriteString(warnStyle.Render(fmt.Sprintf(
-			`Remove "%s" and %d %s from tree? [y/N]`,
-			m.target, m.subtreeCount, label,
-		)))
-		b.WriteString("\n\n")
-		b.WriteString(RenderHelp("y: confirm  n/esc: cancel"))
+		b.WriteString(m.confirm.View())
 	case stepUnlinkSuccess:
 		b.WriteString(okStyle.Render(fmt.Sprintf("Removed %s and %d branches from tree", m.target, m.subtreeCount)))
 		b.WriteString("\n\n")
@@ -146,6 +138,14 @@ func (m UnlinkFlowModel) updatePick(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.target = item.name
 		m.subtreeCount = len(m.project.Tree.SubtreeNames(item.name))
 		m.step = stepUnlinkConfirm
+		label := "branch"
+		if m.subtreeCount != 1 {
+			label = "branches"
+		}
+		m.confirm = NewConfirm(ConfirmOptions{
+			Question: fmt.Sprintf(`Remove "%s" and %d %s from tree?`, m.target, m.subtreeCount, label),
+			Width:    m.width,
+		})
 		return m, nil
 	}
 	var cmd tea.Cmd
@@ -154,12 +154,14 @@ func (m UnlinkFlowModel) updatePick(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m UnlinkFlowModel) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if keyMatchesNo(msg) || keyMatchesBack(msg) {
+	var choice ConfirmChoice
+	m.confirm, choice = m.confirm.Update(msg)
+	if choice == ConfirmNo {
 		m.cancelled = true
 		m.finished = true
 		return m, tea.Quit
 	}
-	if keyMatchesYes(msg) || keyMatchesEnter(msg) {
+	if choice == ConfirmYes {
 		if err := m.project.Tree.UnlinkSubtree(m.target); err != nil {
 			m.errMsg = err.Error()
 			m.step = stepUnlinkError

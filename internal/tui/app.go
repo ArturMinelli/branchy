@@ -46,6 +46,7 @@ type Model struct {
 	linkInput    int
 	unlinkTarget string
 	unlinkCount  int
+	unlinkConfirm ConfirmModel
 	mrFlow       MRFlowModel
 	errMsg      string
 	quitting    bool
@@ -227,16 +228,7 @@ func (m Model) View() string {
 		}
 		b.WriteString(RenderHelp("↑/↓: navigate  s: sync  m: mr  l: link  u: unlink  esc: projects  q: quit"))
 	case screenUnlinkConfirm:
-		label := "branch"
-		if m.unlinkCount != 1 {
-			label = "branches"
-		}
-		b.WriteString(warnStyle.Render(fmt.Sprintf(
-			`Remove "%s" and %d %s from tree? [y/N]`,
-			m.unlinkTarget, m.unlinkCount, label,
-		)))
-		b.WriteString("\n\n")
-		b.WriteString(RenderHelp("y/enter: confirm  n/esc: cancel"))
+		b.WriteString(m.unlinkConfirm.View())
 	case screenLink:
 		b.WriteString("Link branch\n\n")
 		parentMark, childMark := " ", " "
@@ -334,6 +326,14 @@ func (m Model) updateTree(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.unlinkTarget = name
 		m.unlinkCount = len(m.current.Tree.SubtreeNames(name))
+		label := "branch"
+		if m.unlinkCount != 1 {
+			label = "branches"
+		}
+		m.unlinkConfirm = NewConfirm(ConfirmOptions{
+			Question: fmt.Sprintf(`Remove "%s" and %d %s from tree?`, name, m.unlinkCount, label),
+			Width:    m.width,
+		})
 		m.screen = screenUnlinkConfirm
 		m.errMsg = ""
 		return m, nil
@@ -417,13 +417,20 @@ func (m Model) updateLink(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateUnlink(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if key.Matches(msg, keys.Back) || key.Matches(msg, keys.No) {
+	if key.Matches(msg, keys.Quit) {
+		m.quitting = true
+		return m, tea.Quit
+	}
+
+	var choice ConfirmChoice
+	m.unlinkConfirm, choice = m.unlinkConfirm.Update(msg)
+	if choice == ConfirmNo {
 		m.screen = screenTree
 		m.unlinkTarget = ""
 		m.unlinkCount = 0
 		return m, nil
 	}
-	if key.Matches(msg, keys.Yes) || key.Matches(msg, keys.Enter) {
+	if choice == ConfirmYes {
 		if err := m.current.Tree.UnlinkSubtree(m.unlinkTarget); err != nil {
 			m.errMsg = err.Error()
 			m.screen = screenTree
@@ -442,10 +449,6 @@ func (m Model) updateUnlink(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.unlinkCount = 0
 		m.selectProject(m.current)
 		return m, nil
-	}
-	if key.Matches(msg, keys.Quit) {
-		m.quitting = true
-		return m, tea.Quit
 	}
 	return m, nil
 }

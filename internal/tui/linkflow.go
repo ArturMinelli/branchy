@@ -29,6 +29,7 @@ type LinkFlowModel struct {
 	child      string
 	branchList list.Model
 	errMsg     string
+	confirm    ConfirmModel
 	finished   bool
 	cancelled  bool
 	flowWindow
@@ -119,8 +120,7 @@ func (m LinkFlowModel) View() string {
 		b.WriteString("\n\n")
 		b.WriteString(RenderHelp("type name  enter: continue  esc: cancel"))
 	case stepLinkConfirm:
-		b.WriteString(fmt.Sprintf("Link %s → %s?\n\n", m.parent, m.child))
-		b.WriteString(RenderHelp("y: save  n/esc: cancel"))
+		b.WriteString(m.confirm.View())
 	case stepLinkSuccess:
 		b.WriteString(okStyle.Render(fmt.Sprintf("Linked %s → %s", m.parent, m.child)))
 		b.WriteString("\n\n")
@@ -177,6 +177,10 @@ func (m LinkFlowModel) updateChildInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.step = stepLinkConfirm
+		m.confirm = NewConfirm(ConfirmOptions{
+			Question: fmt.Sprintf("Link %s → %s?", m.parent, m.child),
+			Width:    m.width,
+		})
 		return m, nil
 	}
 	ch := msg.String()
@@ -192,12 +196,14 @@ func (m LinkFlowModel) updateChildInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m LinkFlowModel) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if keyMatchesNo(msg) || keyMatchesBack(msg) {
+	var choice ConfirmChoice
+	m.confirm, choice = m.confirm.Update(msg)
+	if choice == ConfirmNo {
 		m.cancelled = true
 		m.finished = true
 		return m, tea.Quit
 	}
-	if keyMatchesYes(msg) || keyMatchesEnter(msg) {
+	if choice == ConfirmYes {
 		if err := m.project.Tree.Link(m.parent, m.child); err != nil {
 			m.errMsg = err.Error()
 			m.step = stepLinkError

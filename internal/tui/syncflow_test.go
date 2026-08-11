@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -27,7 +28,7 @@ func testSyncProject() *project.Project {
 func testSyncFlowAtConfirm() SyncFlowModel {
 	p := testSyncProject()
 	edges := p.Tree.CollectEdges("main")
-	return SyncFlowModel{
+	m := SyncFlowModel{
 		project:    p,
 		fromBranch: "main",
 		edges:      edges,
@@ -35,6 +36,7 @@ func testSyncFlowAtConfirm() SyncFlowModel {
 		step:       stepSyncEdgeConfirm,
 		opts:       SyncFlowOptions{Embedded: true},
 	}
+	return m.resetEdgeConfirm()
 }
 
 func TestSyncFlowEmptyEdges(t *testing.T) {
@@ -177,9 +179,50 @@ func TestSyncFlowBrowserNoFinishes(t *testing.T) {
 	m := testSyncFlowAtConfirm()
 	m.step = stepSyncBrowser
 	m.results = []sync.Result{{Parent: "main", Child: "develop", Action: mr.ActionCreated, URL: "https://example.com/1"}}
+	m = m.resetBrowserConfirm()
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	flow := updated.(SyncFlowModel)
 	if !flow.finished {
 		t.Fatal("expected finished after declining browser")
+	}
+}
+
+func TestSyncFlowConfirmViewUsesPanel(t *testing.T) {
+	m := testSyncFlowAtConfirm()
+	view := m.View()
+	if strings.Contains(view, "[y/N]") {
+		t.Fatal("sync confirm view must not contain [y/N]")
+	}
+	if !strings.Contains(view, " No ") || !strings.Contains(view, " Yes ") {
+		t.Fatal("expected confirm buttons in view")
+	}
+}
+
+func TestSyncFlowLoadingIgnoresKeys(t *testing.T) {
+	m := testSyncFlowAtConfirm()
+	m.step = stepSyncProcessing
+	m.loading = NewLoading(LoadingOptions{Message: "Creating MR"})
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	flow := updated.(SyncFlowModel)
+	if flow.step != stepSyncProcessing {
+		t.Fatalf("expected to stay on processing, got %d", flow.step)
+	}
+	if cmd != nil {
+		t.Fatal("expected no command while loading")
+	}
+}
+
+func TestSyncFlowYesEntersLoading(t *testing.T) {
+	m := testSyncFlowAtConfirm()
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	flow := updated.(SyncFlowModel)
+	if flow.step != stepSyncProcessing {
+		t.Fatalf("expected stepSyncProcessing, got %d", flow.step)
+	}
+	if cmd == nil {
+		t.Fatal("expected async edge command")
+	}
+	if !flow.loading.Active() {
+		t.Fatal("expected loading active")
 	}
 }

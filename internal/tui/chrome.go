@@ -8,6 +8,11 @@ var (
 	okStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
 	warnStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	errStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+
+	confirmBorderStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("240")).Padding(1, 2)
+	confirmButtonStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	confirmButtonFocusStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212")).Background(lipgloss.Color("236"))
+	loadingPanelStyle       = lipgloss.NewStyle().PaddingLeft(2)
 )
 
 const minTermWidth = 80

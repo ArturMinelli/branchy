@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -44,6 +45,18 @@ func TestUnlinkFlowPickToConfirm(t *testing.T) {
 	}
 	if flow.subtreeCount != 2 {
 		t.Fatalf("expected subtree count 2, got %d", flow.subtreeCount)
+	}
+}
+
+func TestUnlinkFlowConfirmViewUsesPanel(t *testing.T) {
+	m := newUnlinkFlowModel(testUnlinkProject())
+	m.target = "develop"
+	m.subtreeCount = 2
+	m.step = stepUnlinkConfirm
+	m.confirm = NewConfirm(ConfirmOptions{Question: `Remove "develop" and 2 branches from tree?`, Width: 80})
+	view := m.View()
+	if strings.Contains(view, "[y/N]") {
+		t.Fatal("unlink confirm view must not contain [y/N]")
 	}
 }
 

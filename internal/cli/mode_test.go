@@ -48,6 +48,25 @@ func TestUseTUINoFlagsWhenTTY(t *testing.T) {
 	}
 }
 
+func TestUseTUIFalseWhenAnyFlagSet(t *testing.T) {
+	cmds := []*cobra.Command{
+		{Use: "sync"},
+		{Use: "mr"},
+		{Use: "link"},
+		{Use: "init"},
+	}
+	for _, cmd := range cmds {
+		cmd.Flags().String("from", "", "")
+		cmd.Flags().Bool("yes", false, "")
+		if err := cmd.Flags().Set("from", "main"); err != nil {
+			t.Fatal(err)
+		}
+		if UseTUI(cmd) {
+			t.Fatalf("expected UseTUI false for %s when flag set", cmd.Use)
+		}
+	}
+}
+
 func TestSyncCmdFlagForcesCLI(t *testing.T) {
 	var buf bytes.Buffer
 	syncCmd.SetOut(&buf)

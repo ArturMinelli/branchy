@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -41,11 +42,24 @@ func TestLinkFlowParentToChild(t *testing.T) {
 	}
 }
 
+func TestLinkFlowConfirmViewUsesPanel(t *testing.T) {
+	m := newLinkFlowModel(testLinkProject())
+	m.parent = "main"
+	m.child = "feature"
+	m.step = stepLinkConfirm
+	m.confirm = NewConfirm(ConfirmOptions{Question: "Link main → feature?", Width: 80})
+	view := m.View()
+	if strings.Contains(view, "[y/N]") {
+		t.Fatal("link confirm view must not contain [y/N]")
+	}
+}
+
 func TestLinkFlowConfirmCancel(t *testing.T) {
 	m := newLinkFlowModel(testLinkProject())
 	m.parent = "main"
 	m.child = "feature"
 	m.step = stepLinkConfirm
+	m.confirm = NewConfirm(ConfirmOptions{Question: "Link main → feature?", Width: 80})
 
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	flow := updated.(LinkFlowModel)
