@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
+	"branchy/internal/project"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
-	"branchy/internal/project"
 )
 
 type screen int
@@ -33,23 +33,23 @@ func (i projectItem) FilterValue() string { return i.id + " " + i.path }
 
 // Model is the root Bubble Tea model.
 type Model struct {
-	screen      screen
-	width       int
-	height      int
-	projects    []*project.Project
-	projectList list.Model
-	treeView    BranchTreeView
-	current     *project.Project
-	syncFlow    SyncFlowModel
-	linkParent   string
-	linkChild    string
-	linkInput    int
-	unlinkTarget string
-	unlinkCount  int
+	screen        screen
+	width         int
+	height        int
+	projects      []*project.Project
+	projectList   list.Model
+	treeView      BranchTreeView
+	current       *project.Project
+	syncFlow      SyncFlowModel
+	linkParent    string
+	linkChild     string
+	linkInput     int
+	unlinkTarget  string
+	unlinkCount   int
 	unlinkConfirm ConfirmModel
-	mrFlow       MRFlowModel
-	errMsg      string
-	quitting    bool
+	mrFlow        MRFlowModel
+	errMsg        string
+	quitting      bool
 }
 
 type keyMap struct {
@@ -58,9 +58,9 @@ type keyMap struct {
 	Enter  key.Binding
 	Back   key.Binding
 	Sync   key.Binding
-	Link    key.Binding
-	Unlink  key.Binding
-	MR      key.Binding
+	Link   key.Binding
+	Unlink key.Binding
+	MR     key.Binding
 	Quit   key.Binding
 	Yes    key.Binding
 	No     key.Binding
@@ -68,18 +68,18 @@ type keyMap struct {
 }
 
 var keys = keyMap{
-	Up:    key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
-	Down:  key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
-	Enter: key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select")),
-	Back:  key.NewBinding(key.WithKeys("esc", "b"), key.WithHelp("esc/b", "back")),
-	Sync:  key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sync")),
+	Up:     key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
+	Down:   key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
+	Enter:  key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select")),
+	Back:   key.NewBinding(key.WithKeys("esc", "b"), key.WithHelp("esc/b", "back")),
+	Sync:   key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sync")),
 	Link:   key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "link")),
 	Unlink: key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "unlink")),
 	MR:     key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "mr")),
-	Quit:  key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
-	Yes:   key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "yes")),
-	No:    key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "no")),
-	Tab:   key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next field")),
+	Quit:   key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+	Yes:    key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "yes")),
+	No:     key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "no")),
+	Tab:    key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next field")),
 }
 
 // Run starts the TUI for an optional pre-resolved project.
@@ -253,6 +253,9 @@ func (m *Model) selectProject(p *project.Project) {
 	m.screen = screenTree
 	m.errMsg = ""
 	m.treeView = newBranchTreeView(p.Tree)
+	if p != nil {
+		m.treeView.setInbound(loadInboundCounts(p.Path, p.Tree))
+	}
 }
 
 func (m Model) updateProjectPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

@@ -36,17 +36,31 @@ type MROptions struct {
 }
 
 type branchItem struct {
-	name string
+	name  string
+	badge string
 }
 
-func (i branchItem) Title() string       { return i.name }
+func (i branchItem) Title() string {
+	if i.badge == "" {
+		return i.name
+	}
+	return i.name + "  " + i.badge
+}
 func (i branchItem) Description() string { return "" }
 func (i branchItem) FilterValue() string { return i.name }
 
 func newBranchList(names []string, title string) list.Model {
+	return newBranchListWithBadges(names, title, nil)
+}
+
+func newBranchListWithBadges(names []string, title string, badges map[string]string) list.Model {
 	items := make([]list.Item, len(names))
 	for i, name := range names {
-		items[i] = branchItem{name: name}
+		badge := ""
+		if badges != nil {
+			badge = badges[name]
+		}
+		items[i] = branchItem{name: name, badge: badge}
 	}
 	l := list.New(items, list.NewDefaultDelegate(), 0, 0)
 	l.Title = title

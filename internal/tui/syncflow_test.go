@@ -229,6 +229,96 @@ func TestSyncFlowConfirmViewUsesPanel(t *testing.T) {
 	}
 }
 
+func TestSyncFlowPickerInboundBadges(t *testing.T) {
+	m := newSyncFlowModel(testSyncProject(), "", SyncFlowOptions{})
+	m.inbound = map[string]inboundCount{
+		"develop":   {files: 7, ok: true},
+		"feature-a": {files: 0, ok: true},
+		"release":   {files: 2, ok: true},
+	}
+	m.branchList = newBranchListWithBadges(m.project.Tree.Names(), "Select root branch to sync from", inboundBadges(m.inbound))
+
+	byName := map[string]branchItem{}
+	for _, item := range m.branchList.Items() {
+		bi, ok := item.(branchItem)
+		if !ok {
+			t.Fatal("expected branchItem")
+		}
+		byName[bi.name] = bi
+	}
+
+	if byName["develop"].Title() != "develop  7" {
+		t.Fatalf("develop title: %q", byName["develop"].Title())
+	}
+	if byName["develop"].FilterValue() != "develop" {
+		t.Fatalf("filter must stay bare name, got %q", byName["develop"].FilterValue())
+	}
+	if byName["feature-a"].Title() != "feature-a" {
+		t.Fatalf("zero badge must be hidden, got %q", byName["feature-a"].Title())
+	}
+	if byName["main"].Title() != "main" {
+		t.Fatalf("root must have no badge, got %q", byName["main"].Title())
+	}
+}
+
+func TestSyncFlowConfirmShowsInboundCount(t *testing.T) {
+	m := testSyncFlowAtConfirm()
+	m.inbound = map[string]inboundCount{
+		"develop": {files: 7, ok: true},
+	}
+	m = m.resetEdgeConfirm()
+	view := m.View()
+	if !strings.Contains(view, "7 files would change on develop") {
+		t.Fatalf("expected confirm count, got:\n%s", view)
+	}
+	if !strings.Contains(view, "Create MR main → develop?") {
+		t.Fatal("question text must stay unchanged")
+	}
+}
+
+func TestSyncFlowConfirmShowsKnownZero(t *testing.T) {
+	m := testSyncFlowAtConfirm()
+	m.inbound = map[string]inboundCount{
+		"develop": {files: 0, ok: true},
+	}
+	m = m.resetEdgeConfirm()
+	view := m.View()
+	if !strings.Contains(view, "0 files would change on develop") {
+		t.Fatalf("expected known zero on confirm, got:\n%s", view)
+	}
+}
+
+func TestSyncFlowUnknownInbound(t *testing.T) {
+	m := newSyncFlowModel(testSyncProject(), "", SyncFlowOptions{})
+	m.inbound = map[string]inboundCount{
+		"develop":   {files: 3, ok: true},
+		"feature-a": {ok: false},
+	}
+	m.branchList = newBranchListWithBadges(m.project.Tree.Names(), "Select root branch to sync from", inboundBadges(m.inbound))
+
+	byName := map[string]branchItem{}
+	for _, item := range m.branchList.Items() {
+		bi := item.(branchItem)
+		byName[bi.name] = bi
+	}
+	if byName["develop"].Title() != "develop  3" {
+		t.Fatalf("sibling must still show N, got %q", byName["develop"].Title())
+	}
+	if byName["feature-a"].Title() != "feature-a  ?" {
+		t.Fatalf("unknown picker badge: %q", byName["feature-a"].Title())
+	}
+
+	m.fromBranch = "develop"
+	m.edges = []tree.Edge{{Parent: "develop", Child: "feature-a"}}
+	m.edgeIndex = 0
+	m.step = stepSyncEdgeConfirm
+	m = m.resetEdgeConfirm()
+	view := m.View()
+	if !strings.Contains(view, "File count unavailable") {
+		t.Fatalf("expected unavailable confirm line, got:\n%s", view)
+	}
+}
+
 func TestSyncFlowLoadingIgnoresKeys(t *testing.T) {
 	m := testSyncFlowAtConfirm()
 	m.step = stepSyncProcessing

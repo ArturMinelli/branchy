@@ -28,9 +28,10 @@ type branchRow struct {
 
 // BranchTreeView is an always-expanded interactive tree navigator.
 type BranchTreeView struct {
-	rows   []branchRow
-	cursor int
-	width  int
+	rows    []branchRow
+	cursor  int
+	width   int
+	inbound map[string]inboundCount
 }
 
 func newBranchTreeView(doc *tree.Document) BranchTreeView {
@@ -93,6 +94,10 @@ func collectRows(doc *tree.Document, name, prefix string, isLast, isRoot bool, r
 	}
 }
 
+func (v *BranchTreeView) setInbound(counts map[string]inboundCount) {
+	v.inbound = counts
+}
+
 func (v *BranchTreeView) rebuild(doc *tree.Document) {
 	v.rows = flattenTree(doc)
 	if v.cursor >= len(v.rows) {
@@ -134,13 +139,30 @@ func (v BranchTreeView) View() string {
 }
 
 func (v BranchTreeView) renderRow(row branchRow, selected bool) string {
-	prefix := connectorStyle.Render(row.prefix + row.connector)
-	name := branchNameStyle.Render(row.name)
-	line := prefix + name
+	label := row.name
+	badge := ""
+	if c, ok := v.inbound[row.name]; ok {
+		badge = formatInboundBadge(c)
+	}
+	if badge != "" {
+		label = row.name + "  " + badge
+	}
 
+	var line string
 	if selected {
 		marker := cursorStyle.Render("▸ ")
-		line = marker + selectedStyle.Render(row.prefix+row.connector+row.name)
+		line = marker + selectedStyle.Render(row.prefix+row.connector+label)
+	} else {
+		prefix := connectorStyle.Render(row.prefix + row.connector)
+		name := branchNameStyle.Render(row.name)
+		line = prefix + name
+		if badge != "" {
+			styled := helpStyle.Render(badge)
+			if badge == "?" {
+				styled = warnStyle.Render(badge)
+			}
+			line += "  " + styled
+		}
 	}
 
 	if v.width > 0 {

@@ -47,6 +47,7 @@ type SyncFlowModel struct {
 	branchList  list.Model
 	confirm     ConfirmModel
 	loading     LoadingModel
+	inbound     map[string]inboundCount
 	cancelled   bool
 	finished    bool
 	flowWindow
@@ -73,6 +74,9 @@ func newSyncFlowModel(p *project.Project, fromBranch string, opts SyncFlowOption
 		opts:       opts,
 		fromBranch: fromBranch,
 	}
+	if p != nil {
+		m.inbound = loadInboundCounts(p.Path, p.Tree)
+	}
 
 	if fromBranch == "" {
 		names := p.Tree.Names()
@@ -82,11 +86,24 @@ func newSyncFlowModel(p *project.Project, fromBranch string, opts SyncFlowOption
 			return m
 		}
 		m.step = stepSyncPickRoot
-		m.branchList = newBranchList(names, "Select root branch to sync from")
+		m.branchList = newBranchListWithBadges(names, "Select root branch to sync from", inboundBadges(m.inbound))
 		return m
 	}
 
 	return m.prepareSyncFrom(fromBranch)
+}
+
+func inboundBadges(counts map[string]inboundCount) map[string]string {
+	if counts == nil {
+		return nil
+	}
+	badges := make(map[string]string, len(counts))
+	for name, c := range counts {
+		if b := formatInboundBadge(c); b != "" {
+			badges[name] = b
+		}
+	}
+	return badges
 }
 
 func (m SyncFlowModel) prepareSyncFrom(fromBranch string) SyncFlowModel {
@@ -112,7 +129,10 @@ func (m SyncFlowModel) prepareSyncFrom(fromBranch string) SyncFlowModel {
 func (m SyncFlowModel) resetEdgeConfirm() SyncFlowModel {
 	edge := m.currentEdge()
 	m.confirm = NewConfirm(ConfirmOptions{
-		Context:  []string{fmt.Sprintf("Sync from %s", m.fromBranch)},
+		Context: []string{
+			fmt.Sprintf("Sync from %s", m.fromBranch),
+			formatInboundConfirm(edge.Child, lookupInbound(m.inbound, edge.Child)),
+		},
 		Question: fmt.Sprintf("Create MR %s → %s?", edge.Parent, edge.Child),
 		Progress: fmt.Sprintf("Edge %d of %d", m.edgeIndex+1, len(m.edges)),
 		Width:    m.width,
