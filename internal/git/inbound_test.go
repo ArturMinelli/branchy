@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -52,6 +53,59 @@ func TestInboundFilesMissingRef(t *testing.T) {
 	}
 }
 
+func TestInboundFilesRemoteTrackingChild(t *testing.T) {
+	dir := initTestRepo(t)
+	writeCommit(t, dir, "base.txt", "base", "initial")
+	base := strings.TrimSpace(gitOutput(t, dir, "rev-parse", "HEAD"))
+	writeCommit(t, dir, "a.txt", "a", "add a")
+	writeCommit(t, dir, "b.txt", "b", "add b")
+	runGit(t, dir, "update-ref", "refs/remotes/origin/child", base)
+
+	n, err := InboundFiles(dir, "main", "child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("expected 2 inbound files via origin/child, got %d", n)
+	}
+}
+
+func TestInboundFilesPrefersLocalOverRemote(t *testing.T) {
+	dir := initTestRepo(t)
+	writeCommit(t, dir, "base.txt", "base", "initial")
+	runGit(t, dir, "branch", "child")
+	runGit(t, dir, "checkout", "-b", "tmp")
+	writeCommit(t, dir, "remote-only.txt", "x", "on remote tip")
+	sha := strings.TrimSpace(gitOutput(t, dir, "rev-parse", "HEAD"))
+	runGit(t, dir, "checkout", "main")
+	runGit(t, dir, "branch", "-D", "tmp")
+	runGit(t, dir, "update-ref", "refs/remotes/origin/child", sha)
+
+	n, err := InboundFiles(dir, "main", "child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("local child is in sync; must not use remote tip, got %d", n)
+	}
+}
+
+func TestInboundFilesVersionLikeRemoteName(t *testing.T) {
+	dir := initTestRepo(t)
+	writeCommit(t, dir, "base.txt", "base", "initial")
+	base := strings.TrimSpace(gitOutput(t, dir, "rev-parse", "HEAD"))
+	writeCommit(t, dir, "patch.txt", "p", "version branch")
+	runGit(t, dir, "update-ref", "refs/remotes/origin/develop-1.20.5-gestao-estrategica", base)
+
+	n, err := InboundFiles(dir, "main", "develop-1.20.5-gestao-estrategica")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 inbound file for version-like remote branch, got %d", n)
+	}
+}
+
 func TestInboundFilesChildOnlyChanges(t *testing.T) {
 	dir := initTestRepo(t)
 	writeCommit(t, dir, "base.txt", "base", "initial")
@@ -89,6 +143,11 @@ func writeCommit(t *testing.T, dir, name, content, msg string) {
 
 func runGit(t *testing.T, dir string, args ...string) {
 	t.Helper()
+	_ = gitOutput(t, dir, args...)
+}
+
+func gitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(),
@@ -99,7 +158,9 @@ func runGit(t *testing.T, dir string, args ...string) {
 		"GIT_CONFIG_NOSYSTEM=1",
 		"EMAIL=test@example.com",
 	)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	out, err := cmd.CombinedOutput()
+	if err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
+	return string(out)
 }

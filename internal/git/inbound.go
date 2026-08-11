@@ -11,6 +11,7 @@ import (
 // merged into it — the files-changed count GitLab shows on MR parent → child.
 //
 // Comparison is a local three-dot diff: git diff --name-only child...parent.
+// Branch names resolve via ResolveRef (local head, then remote-tracking).
 // Missing or unresolvable refs return an error; callers must not treat that as 0.
 func InboundFiles(dir, parent, child string) (int, error) {
 	if dir == "" || parent == "" || child == "" {
@@ -22,7 +23,16 @@ func InboundFiles(dir, parent, child string) (int, error) {
 		return 0, err
 	}
 
-	spec := child + "..." + parent
+	parentRef, err := ResolveRef(abs, parent)
+	if err != nil {
+		return 0, fmt.Errorf("compare %s → %s: %w", parent, child, err)
+	}
+	childRef, err := ResolveRef(abs, child)
+	if err != nil {
+		return 0, fmt.Errorf("compare %s → %s: %w", parent, child, err)
+	}
+
+	spec := childRef + "..." + parentRef
 	out, err := exec.Command("git", "-C", abs, "diff", "--name-only", spec).Output()
 	if err != nil {
 		return 0, fmt.Errorf("compare %s → %s: %w", parent, child, err)
