@@ -23,14 +23,7 @@ func (c *Client) AuthOK() error {
 
 // FindOpenMR returns the web URL of an open MR for source→target, or "".
 func (c *Client) FindOpenMR(source, target string) (string, error) {
-	out, err := c.run(
-		"mr", "list",
-		"--source-branch", source,
-		"--target-branch", target,
-		"--state", "opened",
-		"--per-page", "1",
-		"-F", "json",
-	)
+	out, err := c.run(openMRListArgs(source, target)...)
 	if err != nil {
 		return "", err
 	}
@@ -84,6 +77,18 @@ var errAlreadyExists = fmt.Errorf("open MR already exists")
 // IsAlreadyExists reports whether err indicates an existing open MR was recovered.
 func IsAlreadyExists(err error) bool {
 	return err != nil && errors.Is(err, errAlreadyExists)
+}
+
+// openMRListArgs builds `glab mr list` flags for one open source→target MR.
+// glab lists opened MRs by default and has no --state flag.
+func openMRListArgs(source, target string) []string {
+	return []string{
+		"mr", "list",
+		"--source-branch", source,
+		"--target-branch", target,
+		"--per-page", "1",
+		"-F", "json",
+	}
 }
 
 func (c *Client) run(args ...string) (string, error) {
