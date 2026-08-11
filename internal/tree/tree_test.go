@@ -1,6 +1,7 @@
 package tree
 
 import (
+	"os"
 	"testing"
 )
 
@@ -31,6 +32,40 @@ func TestLink(t *testing.T) {
 	}
 	if err := doc.Link("main", "release"); err == nil {
 		t.Fatal("expected duplicate error")
+	}
+}
+
+func TestNormalizeEnsuresChildNodes(t *testing.T) {
+	doc := &Document{Branches: map[string]BranchNode{
+		"1.20": {Children: []string{"develop-1.20.7-gestao-estrategica"}},
+	}}
+	doc.Normalize()
+	if _, ok := doc.Branches["develop-1.20.7-gestao-estrategica"]; !ok {
+		t.Fatal("expected child branch to be created")
+	}
+	names := doc.Names()
+	if len(names) != 2 {
+		t.Fatalf("expected 2 branch names, got %v", names)
+	}
+}
+
+func TestLoadNormalizesChildren(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/branch-tree.yaml"
+	data := []byte(`branches:
+  1.20:
+    children:
+      - develop-1.20.7-gestao-estrategica
+`)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := doc.Branches["develop-1.20.7-gestao-estrategica"]; !ok {
+		t.Fatal("expected child branch to be created on load")
 	}
 }
 

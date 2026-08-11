@@ -28,6 +28,7 @@ const (
 	screenTree
 	screenSync
 	screenLink
+	screenMR
 	screenDone
 )
 
@@ -54,6 +55,7 @@ type Model struct {
 	linkParent  string
 	linkChild   string
 	linkInput   int
+	mrFlow      MRFlowModel
 	errMsg      string
 	quitting    bool
 }
@@ -65,6 +67,7 @@ type keyMap struct {
 	Back   key.Binding
 	Sync   key.Binding
 	Link   key.Binding
+	MR     key.Binding
 	Quit   key.Binding
 	Yes    key.Binding
 	No     key.Binding
@@ -78,6 +81,7 @@ var keys = keyMap{
 	Back:  key.NewBinding(key.WithKeys("esc", "b"), key.WithHelp("esc/b", "back")),
 	Sync:  key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sync")),
 	Link:  key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "link")),
+	MR:    key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "mr")),
 	Quit:  key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 	Yes:   key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "yes")),
 	No:    key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "no")),
@@ -139,6 +143,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.projectList.SetWidth(msg.Width)
 		m.projectList.SetHeight(msg.Height - 4)
 		m.treeView.width = msg.Width
+		if m.screen == screenMR {
+			m.mrFlow.width = msg.Width
+			m.mrFlow.height = msg.Height
+			m.mrFlow.branchList.SetWidth(msg.Width)
+			m.mrFlow.branchList.SetHeight(msg.Height - 6)
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -155,6 +165,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateSync(msg)
 		case screenLink:
 			return m.updateLink(msg)
+		case screenMR:
+			var cmd tea.Cmd
+			var mrModel tea.Model
+			mrModel, cmd = m.mrFlow.Update(msg)
+			m.mrFlow = mrModel.(MRFlowModel)
+			if m.mrFlow.finished || m.mrFlow.cancelled {
+				m.screen = screenTree
+				m.mrFlow = MRFlowModel{}
+			}
+			return m, cmd
 		case screenDone:
 			if key.Matches(msg, keys.Quit) || key.Matches(msg, keys.Enter) {
 				return m, tea.Quit
@@ -175,6 +195,9 @@ func (m Model) View() string {
 	if m.quitting {
 		return ""
 	}
+	if m.screen == screenMR {
+		return m.mrFlow.View()
+	}
 
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("branchy"))
@@ -192,7 +215,7 @@ func (m Model) View() string {
 			b.WriteString(m.treeView.View())
 			b.WriteString("\n")
 		}
-		b.WriteString(helpStyle.Render("↑/↓: navigate  s: sync  l: link  esc: projects  q: quit"))
+		b.WriteString(helpStyle.Render("↑/↓: navigate  s: sync  m: mr  l: link  esc: projects  q: quit"))
 	case screenSync:
 		b.WriteString(fmt.Sprintf("Sync from %s\n\n", m.syncFrom))
 		if m.syncSummary != nil {
@@ -300,6 +323,22 @@ func (m Model) updateTree(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.linkInput = 0
 		}
 		m.screen = screenLink
+		m.errMsg = ""
+		return m, nil
+	}
+	if key.Matches(msg, keys.MR) {
+		if m.current == nil {
+			return m, nil
+		}
+		m.mrFlow = newMRFlowModel(m.current, MROptions{
+			PrefilledSource: m.treeView.selectedName(),
+			Embedded:        true,
+		})
+		m.mrFlow.width = m.width
+		m.mrFlow.height = m.height
+		m.mrFlow.branchList.SetWidth(m.width)
+		m.mrFlow.branchList.SetHeight(m.height - 6)
+		m.screen = screenMR
 		m.errMsg = ""
 		return m, nil
 	}

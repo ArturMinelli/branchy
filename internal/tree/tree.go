@@ -37,7 +37,18 @@ func Load(path string) (*Document, error) {
 	if doc.Branches == nil {
 		doc.Branches = map[string]BranchNode{}
 	}
+	doc.Normalize()
 	return &doc, nil
+}
+
+// Normalize ensures every branch referenced in a parent's children list
+// also exists as a key in Branches.
+func (d *Document) Normalize() {
+	for _, node := range d.Branches {
+		for _, child := range node.Children {
+			d.EnsureNode(child)
+		}
+	}
 }
 
 // Save writes a branch-tree.yaml file.

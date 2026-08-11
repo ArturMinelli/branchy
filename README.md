@@ -50,6 +50,7 @@ branchy
 Opens the branch tree viewer. Keys:
 
 - `s` — sync MRs from selected branch
+- `m` — create a manual MR between two branches
 - `l` — link a new child branch (config only)
 - `esc` — back to project picker
 - `q` — quit
@@ -57,11 +58,34 @@ Opens the branch tree viewer. Keys:
 ### CLI commands
 
 ```bash
-branchy sync --from develop       # interactive MR creation
-branchy sync --from develop -y    # create all without prompting
-branchy link <parent> <child>     # add tree edge
-branchy projects                # list registered projects
+branchy mr                          # interactive TUI branch picker
+branchy mr --source A --target B -y   # create MR without TUI
+branchy sync --from develop           # interactive MR creation
+branchy sync --from develop -y        # create all without prompting
+branchy link <parent> <child>         # add tree edge
+branchy projects                      # list registered projects
 ```
+
+## Manual MR (`branchy mr`)
+
+Create a GitLab merge request between any two branches in the project's branch tree:
+
+```bash
+branchy mr
+```
+
+The TUI guides you through source branch, target branch, title (editable), confirmation, and an optional browser open prompt.
+
+**Flags** (skip the TUI when both branches are known):
+
+| Flag | Description |
+|------|-------------|
+| `--source` | Source branch name |
+| `--target` | Target branch name |
+| `--title` | MR title (auto-generated if omitted) |
+| `--yes` / `-y` | Skip confirmation prompt |
+
+From the main TUI, press `m` on a selected branch to start an MR with that branch as source.
 
 ## Sync behavior
 

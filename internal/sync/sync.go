@@ -6,6 +6,7 @@ import (
 
 	"branchy/internal/browser"
 	"branchy/internal/gitlab"
+	"branchy/internal/mr"
 	"branchy/internal/project"
 	"branchy/internal/tree"
 )
@@ -54,7 +55,7 @@ func Run(p *project.Project, opts Options) (*Summary, error) {
 	var urls []string
 
 	for _, edge := range edges {
-		res := processEdge(client, edge, opts)
+		res := processEdge(p, edge, opts)
 		summary.Results = append(summary.Results, res)
 		if res.URL != "" && res.Action != "failed" {
 			urls = append(urls, res.URL)
@@ -71,7 +72,7 @@ func Run(p *project.Project, opts Options) (*Summary, error) {
 	return summary, nil
 }
 
-func processEdge(client *gitlab.Client, edge tree.Edge, opts Options) Result {
+func processEdge(p *project.Project, edge tree.Edge, opts Options) Result {
 	res := Result{Parent: edge.Parent, Child: edge.Child}
 
 	if opts.Confirm != nil {
@@ -88,31 +89,21 @@ func processEdge(client *gitlab.Client, edge tree.Edge, opts Options) Result {
 		}
 	}
 
-	existing, err := client.FindOpenMR(edge.Parent, edge.Child)
-	if err != nil {
-		res.Action = "failed"
-		res.Message = err.Error()
-		return res
-	}
-	if existing != "" {
-		res.Action = "skipped"
-		res.URL = existing
-		res.Message = "open MR already exists"
-		return res
-	}
-
 	ts := time.Now().Format("2006-01-02 15:04:05 -0700")
-	title := fmt.Sprintf("Sync: %s → %s", edge.Parent, edge.Child)
-	desc := fmt.Sprintf("Automated branch sync created by branchy on %s.", ts)
-
-	url, err := client.CreateMR(edge.Parent, edge.Child, title, desc)
+	mrRes, err := mr.Create(p, mr.CreateRequest{
+		Source:      edge.Parent,
+		Target:      edge.Child,
+		Title:       fmt.Sprintf("Sync: %s → %s", edge.Parent, edge.Child),
+		Description: fmt.Sprintf("Automated branch sync created by branchy on %s.", ts),
+	})
 	if err != nil {
 		res.Action = "failed"
 		res.Message = err.Error()
 		return res
 	}
 
-	res.Action = "created"
-	res.URL = url
+	res.Action = mrRes.Action
+	res.URL = mrRes.URL
+	res.Message = mrRes.Message
 	return res
 }
