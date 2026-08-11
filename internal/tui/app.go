@@ -130,6 +130,29 @@ func newModel(projects []*project.Project, preselected *project.Project) Model {
 func (m Model) Init() tea.Cmd { return nil }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.screen == screenSync {
+		var cmd tea.Cmd
+		var syncModel tea.Model
+		syncModel, cmd = m.syncFlow.Update(msg)
+		m.syncFlow = syncModel.(SyncFlowModel)
+		if m.syncFlow.finished {
+			m.screen = screenTree
+			m.syncFlow = SyncFlowModel{}
+		}
+		return m, cmd
+	}
+	if m.screen == screenMR {
+		var cmd tea.Cmd
+		var mrModel tea.Model
+		mrModel, cmd = m.mrFlow.Update(msg)
+		m.mrFlow = mrModel.(MRFlowModel)
+		if m.mrFlow.finished || m.mrFlow.cancelled {
+			m.screen = screenTree
+			m.mrFlow = MRFlowModel{}
+		}
+		return m, cmd
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -137,16 +160,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.projectList.SetWidth(msg.Width)
 		m.projectList.SetHeight(msg.Height - 4)
 		m.treeView.width = msg.Width
-		if m.screen == screenMR {
-			m.mrFlow.width = msg.Width
-			m.mrFlow.height = msg.Height
-			m.mrFlow.branchList.SetWidth(msg.Width)
-			m.mrFlow.branchList.SetHeight(msg.Height - 6)
-		}
-		if m.screen == screenSync {
-			m.syncFlow.width = msg.Width
-			m.syncFlow.height = msg.Height
-		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -159,30 +172,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateProjectPicker(msg)
 		case screenTree:
 			return m.updateTree(msg)
-		case screenSync:
-			var cmd tea.Cmd
-			var syncModel tea.Model
-			syncModel, cmd = m.syncFlow.Update(msg)
-			m.syncFlow = syncModel.(SyncFlowModel)
-			if m.syncFlow.finished {
-				m.screen = screenTree
-				m.syncFlow = SyncFlowModel{}
-			}
-			return m, cmd
 		case screenLink:
 			return m.updateLink(msg)
 		case screenUnlinkConfirm:
 			return m.updateUnlink(msg)
-		case screenMR:
-			var cmd tea.Cmd
-			var mrModel tea.Model
-			mrModel, cmd = m.mrFlow.Update(msg)
-			m.mrFlow = mrModel.(MRFlowModel)
-			if m.mrFlow.finished || m.mrFlow.cancelled {
-				m.screen = screenTree
-				m.mrFlow = MRFlowModel{}
-			}
-			return m, cmd
 		case screenDone:
 			if key.Matches(msg, keys.Quit) || key.Matches(msg, keys.Enter) {
 				return m, tea.Quit
