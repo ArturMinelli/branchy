@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"branchy/internal/gitlab"
@@ -17,7 +18,8 @@ import (
 type syncStep int
 
 const (
-	stepSyncEdgeConfirm syncStep = iota
+	stepSyncPickRoot syncStep = iota
+	stepSyncEdgeConfirm
 	stepSyncProcessing
 	stepSyncSummary
 	stepSyncBrowser
@@ -41,10 +43,10 @@ type SyncFlowModel struct {
 	step       syncStep
 	errMsg     string
 	browserWarn string
+	branchList list.Model
 	cancelled  bool
 	finished   bool
-	width      int
-	height     int
+	flowWindow
 }
 
 // Cancelled reports whether the user cancelled the flow.
@@ -53,6 +55,15 @@ func (m SyncFlowModel) Cancelled() bool { return m.cancelled }
 // Finished reports whether the flow completed.
 func (m SyncFlowModel) Finished() bool { return m.finished }
 
+// RunSync starts a standalone sync TUI for the given project.
+func RunSync(p *project.Project, opts SyncFlowOptions) error {
+	opts.Embedded = false
+	m := newSyncFlowModel(p, "", opts)
+	prog := tea.NewProgram(m, tea.WithAltScreen())
+	_, err := prog.Run()
+	return err
+}
+
 func newSyncFlowModel(p *project.Project, fromBranch string, opts SyncFlowOptions) SyncFlowModel {
 	m := SyncFlowModel{
 		project:    p,
@@ -60,13 +71,30 @@ func newSyncFlowModel(p *project.Project, fromBranch string, opts SyncFlowOption
 		fromBranch: fromBranch,
 	}
 
-	edges := p.Tree.CollectEdges(fromBranch)
+	if fromBranch == "" {
+		names := p.Tree.Names()
+		if len(names) == 0 {
+			m.step = stepSyncError
+			m.errMsg = "branch tree is empty"
+			return m
+		}
+		m.step = stepSyncPickRoot
+		m.branchList = newBranchList(names, "Select root branch to sync from")
+		return m
+	}
+
+	return m.prepareSyncFrom(fromBranch)
+}
+
+func (m SyncFlowModel) prepareSyncFrom(fromBranch string) SyncFlowModel {
+	m.fromBranch = fromBranch
+	edges := m.project.Tree.CollectEdges(fromBranch)
 	if len(edges) == 0 {
 		m.step = stepSyncEmpty
 		return m
 	}
 
-	client := &gitlab.Client{Dir: p.Path}
+	client := &gitlab.Client{Dir: m.project.Path}
 	if err := client.AuthOK(); err != nil {
 		m.step = stepSyncError
 		m.errMsg = fmt.Sprintf("glab auth: %v (run: glab auth login)", err)
@@ -91,8 +119,9 @@ func (m SyncFlowModel) Init() tea.Cmd { return nil }
 func (m SyncFlowModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
+		m.onResize(msg)
+		m.branchList.SetWidth(msg.Width)
+		m.branchList.SetHeight(msg.Height - 6)
 		return m, nil
 
 	case edgeResultMsg:
@@ -106,7 +135,19 @@ func (m SyncFlowModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if m.tooSmall {
+			if key.Matches(msg, flowKeys.Quit) || key.Matches(msg, flowKeys.Enter) {
+				m.finished = true
+				if !m.opts.Embedded {
+					return m, tea.Quit
+				}
+			}
+			return m, nil
+		}
+
 		switch m.step {
+		case stepSyncPickRoot:
+			return m.updatePickRoot(msg)
 		case stepSyncEdgeConfirm:
 			return m.updateEdgeConfirm(msg)
 		case stepSyncSummary:
@@ -120,21 +161,68 @@ func (m SyncFlowModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	if m.step == stepSyncPickRoot {
+		var cmd tea.Cmd
+		m.branchList, cmd = m.branchList.Update(msg)
+		return m, cmd
+	}
+
 	return m, nil
 }
 
+func (m SyncFlowModel) updatePickRoot(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(msg, flowKeys.Quit) {
+		m.finished = true
+		if m.opts.Embedded {
+			m.cancelled = true
+			return m, nil
+		}
+		return m, tea.Quit
+	}
+	if key.Matches(msg, flowKeys.Back) {
+		m.cancelled = true
+		m.finished = true
+		if m.opts.Embedded {
+			return m, nil
+		}
+		return m, tea.Quit
+	}
+	if key.Matches(msg, flowKeys.Enter) {
+		item, ok := m.branchList.SelectedItem().(branchItem)
+		if !ok {
+			return m, nil
+		}
+		updated := m.prepareSyncFrom(item.name)
+		updated.opts = m.opts
+		updated.flowWindow = m.flowWindow
+		updated.branchList = m.branchList
+		return updated, nil
+	}
+	var cmd tea.Cmd
+	m.branchList, cmd = m.branchList.Update(msg)
+	return m, cmd
+}
+
 func (m SyncFlowModel) View() string {
+	if m.tooSmall {
+		return m.wrap("")
+	}
+
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("branchy sync"))
+	b.WriteString(RenderTitle("branchy sync"))
 	b.WriteString("\n\n")
 
 	switch m.step {
+	case stepSyncPickRoot:
+		b.WriteString(m.branchList.View())
+		b.WriteString("\n")
+		b.WriteString(RenderHelp("↑/↓: navigate  enter: select  esc: cancel  q: quit"))
 	case stepSyncEdgeConfirm:
 		edge := m.currentEdge()
 		b.WriteString(fmt.Sprintf("Sync from %s\n\n", m.fromBranch))
 		b.WriteString(fmt.Sprintf("Create MR %s → %s? [y/N]\n", edge.Parent, edge.Child))
 		b.WriteString(fmt.Sprintf("(edge %d of %d)\n\n", m.edgeIndex+1, len(m.edges)))
-		b.WriteString(helpStyle.Render("y: create  n: skip  esc: cancel remaining  q: quit"))
+		b.WriteString(RenderHelp("y: create  n: skip  esc: cancel remaining  q: quit"))
 	case stepSyncProcessing:
 		edge := m.currentEdge()
 		b.WriteString(fmt.Sprintf("Sync from %s\n\n", m.fromBranch))
@@ -144,9 +232,11 @@ func (m SyncFlowModel) View() string {
 		b.WriteString(m.renderResults())
 		b.WriteString("\n")
 		if len(sync.CreatedURLs(m.summary())) > 0 {
-			b.WriteString(helpStyle.Render("enter: continue  q: quit"))
+			b.WriteString(RenderHelp("enter: continue  q: quit"))
+		} else if m.opts.Embedded {
+			b.WriteString(RenderHelp("enter/q: back to tree"))
 		} else {
-			b.WriteString(helpStyle.Render("enter/q: back to tree"))
+			b.WriteString(RenderHelp("enter/q: done"))
 		}
 	case stepSyncBrowser:
 		b.WriteString(fmt.Sprintf("Sync from %s\n\n", m.fromBranch))
@@ -162,15 +252,23 @@ func (m SyncFlowModel) View() string {
 			b.WriteString(warnStyle.Render(m.browserWarn))
 			b.WriteString("\n\n")
 		}
-		b.WriteString(helpStyle.Render("y: open  n/enter: done  q: quit"))
+		b.WriteString(RenderHelp("y: open  n/enter: done  q: quit"))
 	case stepSyncEmpty:
 		b.WriteString(warnStyle.Render(fmt.Sprintf("No child branches below %q.", m.fromBranch)))
 		b.WriteString("\n\n")
-		b.WriteString(helpStyle.Render("enter/esc: back to tree"))
+		if m.opts.Embedded {
+			b.WriteString(RenderHelp("enter/esc: back to tree"))
+		} else {
+			b.WriteString(RenderHelp("enter/esc: done"))
+		}
 	case stepSyncError:
 		b.WriteString(errStyle.Render(m.errMsg))
 		b.WriteString("\n\n")
-		b.WriteString(helpStyle.Render("enter/esc: back to tree"))
+		if m.opts.Embedded {
+			b.WriteString(RenderHelp("enter/esc: back to tree"))
+		} else {
+			b.WriteString(RenderHelp("enter/esc: done"))
+		}
 	}
 
 	return b.String()

@@ -49,6 +49,43 @@ func TestSyncFlowEmptyEdges(t *testing.T) {
 	}
 }
 
+func TestSyncFlowPickRootWhenFromEmpty(t *testing.T) {
+	m := newSyncFlowModel(testSyncProject(), "", SyncFlowOptions{})
+	if m.step != stepSyncPickRoot {
+		t.Fatalf("expected stepSyncPickRoot, got %d", m.step)
+	}
+}
+
+func TestSyncFlowPickRootSelectsBranch(t *testing.T) {
+	m := newSyncFlowModel(testSyncProject(), "", SyncFlowOptions{})
+	m.branchList.Select(0)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	flow := updated.(SyncFlowModel)
+	if flow.fromBranch == "" {
+		t.Fatal("expected fromBranch set after pick")
+	}
+	if flow.step != stepSyncEdgeConfirm && flow.step != stepSyncEmpty && flow.step != stepSyncError {
+		t.Fatalf("unexpected step after pick: %d", flow.step)
+	}
+}
+
+func TestSyncFlowStandaloneFinishQuits(t *testing.T) {
+	m := testSyncFlowAtConfirm()
+	m.opts = SyncFlowOptions{Embedded: false}
+	m.step = stepSyncSummary
+	m.results = []sync.Result{{Parent: "main", Child: "develop", Action: mr.ActionSkipped, Message: "skipped"}}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	flow := updated.(SyncFlowModel)
+	if !flow.finished {
+		t.Fatal("expected finished")
+	}
+	if cmd == nil {
+		t.Fatal("expected quit command for standalone flow")
+	}
+}
+
 func TestSyncFlowDeclineSkipsEdge(t *testing.T) {
 	m := testSyncFlowAtConfirm()
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})

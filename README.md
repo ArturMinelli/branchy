@@ -39,7 +39,7 @@ Inside a git repository:
 branchy init
 ```
 
-Imports `repo/branch-tree.yaml` if present, otherwise scaffolds a minimal tree.
+Imports `repo/branch-tree.yaml` if present, otherwise scaffolds a minimal tree. In a TTY, `branchy init` opens a registration wizard; `branchy init --force` stays plain CLI.
 
 ### TUI (default)
 
@@ -58,14 +58,29 @@ Opens the branch tree viewer. Keys:
 
 ### CLI commands
 
+**Interactive mode** (TTY, no flags): dedicated full-screen TUI per command, then exit to shell.
+
+**Scripted mode** (any flag, full positional args, or non-TTY): plain stdout/stdin, no TUI.
+
 ```bash
-branchy mr                          # interactive TUI branch picker
-branchy mr --source A --target B -y   # create MR without TUI
-branchy sync --from develop           # per-edge prompts + end browser prompt
-branchy sync --from develop -y        # skip per-edge prompts; browser prompts at end
-branchy link <parent> <child>         # add tree edge
-branchy unlink <parent> <child>       # remove child subtree from tree
-branchy projects                      # list registered projects
+branchy sync                         # interactive sync TUI (root picker → per-edge confirm)
+branchy sync --from develop          # plain CLI: per-edge prompts + end browser prompt
+branchy sync --from develop -y        # plain CLI: skip per-edge prompts; browser prompts at end
+
+branchy mr                           # interactive MR TUI
+branchy mr --source A --target B -y  # plain CLI: create MR without TUI
+
+branchy link                         # interactive link TUI (parent picker → child name)
+branchy link <parent> <child>         # plain CLI: add tree edge
+
+branchy unlink                       # interactive unlink TUI (branch picker → confirm)
+branchy unlink <parent> <child>       # plain CLI: remove child subtree
+
+branchy init                         # interactive registration wizard
+branchy init --force                 # plain CLI: re-import branch tree
+
+branchy projects                     # interactive project browser
+branchy projects | cat               # plain CLI: tab-separated list
 ```
 
 ## Manual MR (`branchy mr`)
@@ -78,7 +93,7 @@ branchy mr
 
 The TUI guides you through source branch, target branch, title (editable), confirmation, and an optional browser open prompt.
 
-**Flags** (skip the TUI when both branches are known):
+**Flags** (any flag disables TUI; both branches required for plain CLI):
 
 | Flag | Description |
 |------|-------------|
@@ -91,9 +106,9 @@ From the main TUI, press `m` on a selected branch to start an MR with that branc
 
 ## Sync behavior
 
-For a chosen root branch, branchy walks the tree depth-first and prompts to create a GitLab MR for each parent→child edge (`parent` → `child`). In the TUI (`s` key), each edge is confirmed individually — there is no bulk "create all" step. Open MRs are skipped.
+For a chosen root branch, branchy walks the tree depth-first and prompts to create a GitLab MR for each parent→child edge (`parent` → `child`). In the TUI (`s` key or `branchy sync`), each edge is confirmed individually — there is no bulk "create all" step. Open MRs are skipped.
 
-After sync completes, if any MRs were created in the session, branchy asks whether to open them in the browser. Tabs open in tree order (created MRs only). The CLI behaves the same way: per-edge prompts (skipped with `-y`), then an optional end browser prompt.
+After sync completes, if any MRs were created in the session, branchy asks whether to open them in the browser. Tabs open in tree order (created MRs only). The plain CLI behaves the same way: per-edge prompts (skipped with `-y`), then an optional end browser prompt.
 
 ```bash
 branchy sync --from develop           # per-edge prompts + end browser prompt

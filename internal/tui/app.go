@@ -7,17 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-
 	"branchy/internal/project"
-)
-
-var (
-	titleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
-	helpStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	okStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
-	warnStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	errStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 )
 
 type screen int
@@ -220,22 +210,22 @@ func (m Model) View() string {
 	}
 
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("branchy"))
+	b.WriteString(RenderTitle("branchy"))
 	b.WriteString("\n\n")
 
 	switch m.screen {
 	case screenProjectPicker:
 		b.WriteString(m.projectList.View())
 		b.WriteString("\n")
-		b.WriteString(helpStyle.Render("enter: open  q: quit"))
+		b.WriteString(RenderHelp("enter: open  q: quit"))
 	case screenTree:
 		if m.current != nil {
-			b.WriteString(helpStyle.Render(m.current.ID + " — " + m.current.Path))
+			b.WriteString(RenderHelp(m.current.ID + " — " + m.current.Path))
 			b.WriteString("\n\n")
 			b.WriteString(m.treeView.View())
 			b.WriteString("\n")
 		}
-		b.WriteString(helpStyle.Render("↑/↓: navigate  s: sync  m: mr  l: link  u: unlink  esc: projects  q: quit"))
+		b.WriteString(RenderHelp("↑/↓: navigate  s: sync  m: mr  l: link  u: unlink  esc: projects  q: quit"))
 	case screenUnlinkConfirm:
 		label := "branch"
 		if m.unlinkCount != 1 {
@@ -246,7 +236,7 @@ func (m Model) View() string {
 			m.unlinkTarget, m.unlinkCount, label,
 		)))
 		b.WriteString("\n\n")
-		b.WriteString(helpStyle.Render("y/enter: confirm  n/esc: cancel"))
+		b.WriteString(RenderHelp("y/enter: confirm  n/esc: cancel"))
 	case screenLink:
 		b.WriteString("Link branch\n\n")
 		parentMark, childMark := " ", " "
@@ -258,7 +248,7 @@ func (m Model) View() string {
 		b.WriteString(fmt.Sprintf("%s parent: %s\n", parentMark, m.linkParent))
 		b.WriteString(fmt.Sprintf("%s child:  %s\n", childMark, m.linkChild))
 		b.WriteString("\n")
-		b.WriteString(helpStyle.Render("type name  tab: switch field  enter: save  esc: cancel"))
+		b.WriteString(RenderHelp("type name  tab: switch field  enter: save  esc: cancel"))
 	case screenDone:
 		if m.errMsg != "" {
 			b.WriteString(errStyle.Render(m.errMsg))

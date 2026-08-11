@@ -58,6 +58,7 @@ type MRFlowModel struct {
 	quitting    bool
 	cancelled   bool
 	finished    bool
+	flowWindow
 }
 
 // Cancelled reports whether the user cancelled the flow.
@@ -130,8 +131,7 @@ func (m MRFlowModel) Init() tea.Cmd { return nil }
 func (m MRFlowModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
+		m.onResize(msg)
 		m.branchList.SetWidth(msg.Width)
 		m.branchList.SetHeight(msg.Height - 6)
 		return m, nil
@@ -139,6 +139,12 @@ func (m MRFlowModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.quitting {
 			return m, tea.Quit
+		}
+		if m.tooSmall {
+			if key.Matches(msg, mrKeys.Quit) || key.Matches(msg, mrKeys.Enter) {
+				return m.cancelOrQuit()
+			}
+			return m, nil
 		}
 
 		switch m.step {
@@ -172,30 +178,33 @@ func (m MRFlowModel) View() string {
 	if m.quitting {
 		return ""
 	}
+	if m.tooSmall {
+		return m.wrap("")
+	}
 
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("branchy mr"))
+	b.WriteString(RenderTitle("branchy mr"))
 	b.WriteString("\n\n")
 
 	switch m.step {
 	case stepMRSource, stepMRTarget:
 		if m.step == stepMRTarget && m.source != "" {
-			b.WriteString(helpStyle.Render("Source: " + m.source))
+			b.WriteString(RenderHelp("Source: " + m.source))
 			b.WriteString("\n\n")
 		}
 		b.WriteString(m.branchList.View())
 		b.WriteString("\n")
-		b.WriteString(helpStyle.Render("↑/↓: navigate  enter: select  esc: cancel  q: quit"))
+		b.WriteString(RenderHelp("↑/↓: navigate  enter: select  esc: cancel  q: quit"))
 	case stepMRTitle:
 		b.WriteString(fmt.Sprintf("Source: %s  →  Target: %s\n\n", m.source, m.target))
 		b.WriteString("MR title:\n")
 		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("252")).Render(m.title))
 		b.WriteString("\n\n")
-		b.WriteString(helpStyle.Render("type to edit  enter: continue  esc: cancel"))
+		b.WriteString(RenderHelp("type to edit  enter: continue  esc: cancel"))
 	case stepMRConfirm:
 		b.WriteString(fmt.Sprintf("Create MR %s → %s?\n\n", m.source, m.target))
 		b.WriteString(fmt.Sprintf("Title: %s\n\n", m.title))
-		b.WriteString(helpStyle.Render("y: create  n/esc: cancel"))
+		b.WriteString(RenderHelp("y: create  n/esc: cancel"))
 	case stepMRResult:
 		if m.result != nil {
 			line := fmt.Sprintf("%s → %s: %s", m.result.Source, m.result.Target, m.result.Action)
@@ -215,7 +224,7 @@ func (m MRFlowModel) View() string {
 			}
 			b.WriteString("\n")
 		}
-		b.WriteString(helpStyle.Render("enter: continue"))
+		b.WriteString(RenderHelp("enter: continue"))
 	case stepMRBrowser:
 		b.WriteString("Open in browser? [y/N]\n\n")
 		if m.result != nil && m.result.URL != "" {
@@ -226,15 +235,15 @@ func (m MRFlowModel) View() string {
 			b.WriteString(warnStyle.Render(m.browserWarn))
 			b.WriteString("\n\n")
 		}
-		b.WriteString(helpStyle.Render("y: open  n/enter: done  q: quit"))
+		b.WriteString(RenderHelp("y: open  n/enter: done  q: quit"))
 	case stepMRError:
 		b.WriteString(errStyle.Render(m.errMsg))
 		b.WriteString("\n\n")
-		b.WriteString(helpStyle.Render("enter/esc: exit"))
+		b.WriteString(RenderHelp("enter/esc: exit"))
 	case stepMRFewBranches:
 		b.WriteString(warnStyle.Render("Need at least 2 branches in tree to create an MR."))
 		b.WriteString("\n\n")
-		b.WriteString(helpStyle.Render("enter/esc: exit"))
+		b.WriteString(RenderHelp("enter/esc: exit"))
 	}
 
 	return b.String()

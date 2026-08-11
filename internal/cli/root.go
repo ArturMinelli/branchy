@@ -45,6 +45,9 @@ var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Register the current git repo with branchy",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if UseTUI(cmd) {
+			return tui.RunInit()
+		}
 		force, _ := cmd.Flags().GetBool("force")
 		p, err := project.Init(project.InitOptions{Force: force})
 		if err != nil {
@@ -63,104 +66,118 @@ var syncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "Create GitLab MRs along branch tree edges",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		from, _ := cmd.Flags().GetString("from")
-		yes, _ := cmd.Flags().GetBool("yes")
-
-		p, err := project.ResolveFromCWD()
-		if err != nil {
-			return err
-		}
-
-		if from == "" {
-			names := p.Tree.Names()
-			if len(names) == 0 {
-				return fmt.Errorf("branch tree is empty")
-			}
-			fmt.Println("Select root branch to sync from:")
-			for i, name := range names {
-				fmt.Printf("  %d) %s\n", i+1, name)
-			}
-			fmt.Print("> ")
-			reader := bufio.NewReader(os.Stdin)
-			line, _ := reader.ReadString('\n')
-			line = strings.TrimSpace(line)
-			var idx int
-			if _, err := fmt.Sscanf(line, "%d", &idx); err != nil || idx < 1 || idx > len(names) {
-				return fmt.Errorf("invalid selection")
-			}
-			from = names[idx-1]
-		}
-
-		edges := p.Tree.CollectEdges(from)
-		if len(edges) == 0 {
-			fmt.Printf("No child branches below %q.\n", from)
-			return nil
-		}
-
-		fmt.Println("Sync plan (parent → child):")
-		for _, e := range edges {
-			fmt.Printf("  • %s → %s\n", e.Parent, e.Child)
-		}
-		fmt.Println()
-
-		reader := bufio.NewReader(os.Stdin)
-		confirm := func(parent, child string) (bool, error) {
-			if yes {
-				return true, nil
-			}
-			fmt.Printf("Create MR %s → %s? [y/N] ", parent, child)
-			line, err := reader.ReadString('\n')
-			if err != nil {
-				return false, err
-			}
-			line = strings.TrimSpace(strings.ToLower(line))
-			return line == "y" || line == "yes", nil
-		}
-
-		summary, err := sync.Run(p, sync.Options{
-			FromBranch: from,
-			Confirm:    confirm,
-		})
-		if err != nil {
-			return err
-		}
-
-		created, skipped, failed := 0, 0, 0
-		for _, r := range summary.Results {
-			switch r.Action {
-			case "created":
-				created++
-				fmt.Printf("Created: %s → %s\n  %s\n", r.Parent, r.Child, r.URL)
-			case "skipped":
-				skipped++
-				fmt.Printf("Skipped: %s → %s (%s)\n", r.Parent, r.Child, r.Message)
-				if r.URL != "" {
-					fmt.Printf("  %s\n", r.URL)
-				}
-			case "failed":
-				failed++
-				fmt.Printf("Failed: %s → %s — %s\n", r.Parent, r.Child, r.Message)
-			}
-		}
-		fmt.Printf("\nDone — created: %d, skipped: %d, failed: %d\n", created, skipped, failed)
-
-		if urls := sync.CreatedURLs(summary); len(urls) > 0 {
-			fmt.Print("Open created MRs in browser? [y/N] ")
-			line, err := reader.ReadString('\n')
+		if UseTUI(cmd) {
+			p, err := project.ResolveFromCWD()
 			if err != nil {
 				return err
 			}
-			line = strings.TrimSpace(strings.ToLower(line))
-			if line == "y" || line == "yes" {
-				fmt.Printf("Opening %d MR(s) in browser...\n", len(urls))
-				if warn := sync.OpenURLs(urls); warn != "" {
-					fmt.Printf("Warning: %s\n", warn)
-				}
+			return tui.RunSync(p, tui.SyncFlowOptions{})
+		}
+		return runSyncCLI(cmd)
+	},
+}
+
+func runSyncCLI(cmd *cobra.Command) error {
+	from, _ := cmd.Flags().GetString("from")
+	yes, _ := cmd.Flags().GetBool("yes")
+
+	p, err := project.ResolveFromCWD()
+	if err != nil {
+		return err
+	}
+
+	if from == "" {
+		if !IsTTY() {
+			return fmt.Errorf("sync requires --from in non-interactive mode")
+		}
+		names := p.Tree.Names()
+		if len(names) == 0 {
+			return fmt.Errorf("branch tree is empty")
+		}
+		fmt.Println("Select root branch to sync from:")
+		for i, name := range names {
+			fmt.Printf("  %d) %s\n", i+1, name)
+		}
+		fmt.Print("> ")
+		reader := bufio.NewReader(os.Stdin)
+		line, _ := reader.ReadString('\n')
+		line = strings.TrimSpace(line)
+		var idx int
+		if _, err := fmt.Sscanf(line, "%d", &idx); err != nil || idx < 1 || idx > len(names) {
+			return fmt.Errorf("invalid selection")
+		}
+		from = names[idx-1]
+	}
+
+	edges := p.Tree.CollectEdges(from)
+	if len(edges) == 0 {
+		fmt.Printf("No child branches below %q.\n", from)
+		return nil
+	}
+
+	fmt.Println("Sync plan (parent → child):")
+	for _, e := range edges {
+		fmt.Printf("  • %s → %s\n", e.Parent, e.Child)
+	}
+	fmt.Println()
+
+	reader := bufio.NewReader(os.Stdin)
+	confirm := func(parent, child string) (bool, error) {
+		if yes {
+			return true, nil
+		}
+		fmt.Printf("Create MR %s → %s? [y/N] ", parent, child)
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return false, err
+		}
+		line = strings.TrimSpace(strings.ToLower(line))
+		return line == "y" || line == "yes", nil
+	}
+
+	summary, err := sync.Run(p, sync.Options{
+		FromBranch: from,
+		Confirm:    confirm,
+	})
+	if err != nil {
+		return err
+	}
+
+	created, skipped, failed := 0, 0, 0
+	for _, r := range summary.Results {
+		switch r.Action {
+		case "created":
+			created++
+			fmt.Printf("Created: %s → %s\n  %s\n", r.Parent, r.Child, r.URL)
+		case "skipped":
+			skipped++
+			fmt.Printf("Skipped: %s → %s (%s)\n", r.Parent, r.Child, r.Message)
+			if r.URL != "" {
+				fmt.Printf("  %s\n", r.URL)
+			}
+		case "failed":
+			failed++
+			fmt.Printf("Failed: %s → %s — %s\n", r.Parent, r.Child, r.Message)
+		}
+	}
+	fmt.Printf("\nDone — created: %d, skipped: %d, failed: %d\n", created, skipped, failed)
+
+	if urls := sync.CreatedURLs(summary); len(urls) > 0 {
+		fmt.Print("Open created MRs in browser? [y/N] ")
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return err
+		}
+		line = strings.TrimSpace(strings.ToLower(line))
+		if line == "y" || line == "yes" {
+			fmt.Printf("Opening %d MR(s) in browser...\n", len(urls))
+			if warn := sync.OpenURLs(urls); warn != "" {
+				fmt.Printf("Warning: %s\n", warn)
 			}
 		}
+	}
 
-		return nil
-	},
+	return nil
 }
 
 func init() {
@@ -182,19 +199,17 @@ var mrCmd = &cobra.Command{
 			return err
 		}
 
+		if UseTUI(cmd) {
+			return tui.RunMR(p, tui.MROptions{})
+		}
+
 		if target != "" && source == "" {
 			return fmt.Errorf("--source is required when --target is set")
 		}
-
-		if source != "" && target != "" {
-			return runMRFlags(p, source, target, title, yes)
+		if source == "" || target == "" {
+			return fmt.Errorf("mr requires --source and --target in non-interactive mode")
 		}
-
-		opts := tui.MROptions{}
-		if source != "" {
-			opts.PrefilledSource = source
-		}
-		return tui.RunMR(p, opts)
+		return runMRFlags(p, source, target, title, yes)
 	},
 }
 
@@ -240,10 +255,24 @@ func init() {
 }
 
 var linkCmd = &cobra.Command{
-	Use:   "link <parent> <child>",
+	Use:   "link [<parent> <child>]",
 	Short: "Add a parent→child edge to the branch tree",
-	Args:  cobra.ExactArgs(2),
+	Args:  cobra.RangeArgs(0, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 1 {
+			return fmt.Errorf("requires 0 or 2 arguments")
+		}
+		if len(args) == 0 {
+			if UseTUI(cmd) {
+				p, err := project.ResolveFromCWD()
+				if err != nil {
+					return err
+				}
+				return tui.RunLink(p)
+			}
+			return fmt.Errorf("link requires <parent> <child> in non-interactive mode")
+		}
+
 		p, err := project.ResolveFromCWD()
 		if err != nil {
 			return err
@@ -261,10 +290,24 @@ var linkCmd = &cobra.Command{
 }
 
 var unlinkCmd = &cobra.Command{
-	Use:   "unlink <parent> <child>",
+	Use:   "unlink [<parent> <child>]",
 	Short: "Remove a child subtree from the branch tree",
-	Args:  cobra.ExactArgs(2),
+	Args:  cobra.RangeArgs(0, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 1 {
+			return fmt.Errorf("requires 0 or 2 arguments")
+		}
+		if len(args) == 0 {
+			if UseTUI(cmd) {
+				p, err := project.ResolveFromCWD()
+				if err != nil {
+					return err
+				}
+				return tui.RunUnlink(p)
+			}
+			return fmt.Errorf("unlink requires <parent> <child> in non-interactive mode")
+		}
+
 		p, err := project.ResolveFromCWD()
 		if err != nil {
 			return err
@@ -298,6 +341,9 @@ var projectsCmd = &cobra.Command{
 	Use:   "projects",
 	Short: "List registered projects",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if UseTUI(cmd) {
+			return tui.RunProjects()
+		}
 		projects, err := project.ListAll()
 		if err != nil {
 			return err
