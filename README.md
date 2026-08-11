@@ -52,6 +52,7 @@ Opens the branch tree viewer. Keys:
 - `s` — sync MRs from selected branch
 - `m` — create a manual MR between two branches
 - `l` — link a new child branch (config only)
+- `u` — unlink selected branch and its subtree (config only)
 - `esc` — back to project picker
 - `q` — quit
 
@@ -63,6 +64,7 @@ branchy mr --source A --target B -y   # create MR without TUI
 branchy sync --from develop           # per-edge prompts + end browser prompt
 branchy sync --from develop -y        # skip per-edge prompts; browser prompts at end
 branchy link <parent> <child>         # add tree edge
+branchy unlink <parent> <child>       # remove child subtree from tree
 branchy projects                      # list registered projects
 ```
 

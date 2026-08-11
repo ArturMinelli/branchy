@@ -27,6 +27,7 @@ const (
 	screenTree
 	screenSync
 	screenLink
+	screenUnlinkConfirm
 	screenMR
 	screenDone
 )
@@ -50,10 +51,12 @@ type Model struct {
 	treeView    BranchTreeView
 	current     *project.Project
 	syncFlow    SyncFlowModel
-	linkParent  string
-	linkChild   string
-	linkInput   int
-	mrFlow      MRFlowModel
+	linkParent   string
+	linkChild    string
+	linkInput    int
+	unlinkTarget string
+	unlinkCount  int
+	mrFlow       MRFlowModel
 	errMsg      string
 	quitting    bool
 }
@@ -64,8 +67,9 @@ type keyMap struct {
 	Enter  key.Binding
 	Back   key.Binding
 	Sync   key.Binding
-	Link   key.Binding
-	MR     key.Binding
+	Link    key.Binding
+	Unlink  key.Binding
+	MR      key.Binding
 	Quit   key.Binding
 	Yes    key.Binding
 	No     key.Binding
@@ -78,8 +82,9 @@ var keys = keyMap{
 	Enter: key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select")),
 	Back:  key.NewBinding(key.WithKeys("esc", "b"), key.WithHelp("esc/b", "back")),
 	Sync:  key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sync")),
-	Link:  key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "link")),
-	MR:    key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "mr")),
+	Link:   key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "link")),
+	Unlink: key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "unlink")),
+	MR:     key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "mr")),
 	Quit:  key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 	Yes:   key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "yes")),
 	No:    key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "no")),
@@ -175,6 +180,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		case screenLink:
 			return m.updateLink(msg)
+		case screenUnlinkConfirm:
+			return m.updateUnlink(msg)
 		case screenMR:
 			var cmd tea.Cmd
 			var mrModel tea.Model
@@ -228,7 +235,18 @@ func (m Model) View() string {
 			b.WriteString(m.treeView.View())
 			b.WriteString("\n")
 		}
-		b.WriteString(helpStyle.Render("↑/↓: navigate  s: sync  m: mr  l: link  esc: projects  q: quit"))
+		b.WriteString(helpStyle.Render("↑/↓: navigate  s: sync  m: mr  l: link  u: unlink  esc: projects  q: quit"))
+	case screenUnlinkConfirm:
+		label := "branch"
+		if m.unlinkCount != 1 {
+			label = "branches"
+		}
+		b.WriteString(warnStyle.Render(fmt.Sprintf(
+			`Remove "%s" and %d %s from tree? [y/N]`,
+			m.unlinkTarget, m.unlinkCount, label,
+		)))
+		b.WriteString("\n\n")
+		b.WriteString(helpStyle.Render("y/enter: confirm  n/esc: cancel"))
 	case screenLink:
 		b.WriteString("Link branch\n\n")
 		parentMark, childMark := " ", " "
@@ -315,6 +333,21 @@ func (m Model) updateTree(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.errMsg = ""
 		return m, nil
 	}
+	if key.Matches(msg, keys.Unlink) {
+		name := m.treeView.selectedName()
+		if name == "" || m.current == nil {
+			return m, nil
+		}
+		if _, ok := m.current.Tree.Branches[name]; !ok {
+			m.errMsg = fmt.Sprintf("branch %q not in tree", name)
+			return m, nil
+		}
+		m.unlinkTarget = name
+		m.unlinkCount = len(m.current.Tree.SubtreeNames(name))
+		m.screen = screenUnlinkConfirm
+		m.errMsg = ""
+		return m, nil
+	}
 	if key.Matches(msg, keys.MR) {
 		if m.current == nil {
 			return m, nil
@@ -389,6 +422,40 @@ func (m Model) updateLink(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.linkParent += ch
 	} else {
 		m.linkChild += ch
+	}
+	return m, nil
+}
+
+func (m Model) updateUnlink(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(msg, keys.Back) || key.Matches(msg, keys.No) {
+		m.screen = screenTree
+		m.unlinkTarget = ""
+		m.unlinkCount = 0
+		return m, nil
+	}
+	if key.Matches(msg, keys.Yes) || key.Matches(msg, keys.Enter) {
+		if err := m.current.Tree.UnlinkSubtree(m.unlinkTarget); err != nil {
+			m.errMsg = err.Error()
+			m.screen = screenTree
+			m.unlinkTarget = ""
+			m.unlinkCount = 0
+			return m, nil
+		}
+		if err := m.current.SaveTree(); err != nil {
+			m.errMsg = err.Error()
+			m.screen = screenTree
+			m.unlinkTarget = ""
+			m.unlinkCount = 0
+			return m, nil
+		}
+		m.unlinkTarget = ""
+		m.unlinkCount = 0
+		m.selectProject(m.current)
+		return m, nil
+	}
+	if key.Matches(msg, keys.Quit) {
+		m.quitting = true
+		return m, tea.Quit
 	}
 	return m, nil
 }

@@ -37,6 +37,7 @@ func init() {
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(mrCmd)
 	rootCmd.AddCommand(linkCmd)
+	rootCmd.AddCommand(unlinkCmd)
 	rootCmd.AddCommand(projectsCmd)
 }
 
@@ -255,6 +256,40 @@ var linkCmd = &cobra.Command{
 			return err
 		}
 		fmt.Printf("Linked %s → %s\n", parent, child)
+		return nil
+	},
+}
+
+var unlinkCmd = &cobra.Command{
+	Use:   "unlink <parent> <child>",
+	Short: "Remove a child subtree from the branch tree",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		p, err := project.ResolveFromCWD()
+		if err != nil {
+			return err
+		}
+		parent, child := args[0], args[1]
+		if parent == "" || child == "" {
+			return fmt.Errorf("parent and child are required")
+		}
+		if parent == child {
+			return fmt.Errorf("parent and child must differ")
+		}
+		if _, ok := p.Tree.Branches[child]; !ok {
+			return fmt.Errorf("branch %q not in tree", child)
+		}
+		if !p.Tree.HasEdge(parent, child) {
+			return fmt.Errorf("edge not found: %s → %s", parent, child)
+		}
+		count := len(p.Tree.SubtreeNames(child))
+		if err := p.Tree.UnlinkSubtree(child); err != nil {
+			return err
+		}
+		if err := p.SaveTree(); err != nil {
+			return err
+		}
+		fmt.Printf("Unlinked %s → %s (%d branches removed)\n", parent, child, count)
 		return nil
 	},
 }

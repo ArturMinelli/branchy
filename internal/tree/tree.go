@@ -142,3 +142,82 @@ func (d *Document) EnsureNode(name string) {
 		d.Branches[name] = BranchNode{}
 	}
 }
+
+// SubtreeNames returns root and all descendants via DFS.
+func (d *Document) SubtreeNames(root string) []string {
+	if _, ok := d.Branches[root]; !ok {
+		return nil
+	}
+	var names []string
+	d.collectSubtreeNames(root, &names)
+	return names
+}
+
+func (d *Document) collectSubtreeNames(name string, names *[]string) {
+	*names = append(*names, name)
+	node, ok := d.Branches[name]
+	if !ok {
+		return
+	}
+	children := append([]string(nil), node.Children...)
+	sort.Strings(children)
+	for _, child := range children {
+		d.collectSubtreeNames(child, names)
+	}
+}
+
+// ParentOf returns the parent branch name if child appears in any children list.
+func (d *Document) ParentOf(child string) (string, bool) {
+	for parent, node := range d.Branches {
+		for _, c := range node.Children {
+			if c == child {
+				return parent, true
+			}
+		}
+	}
+	return "", false
+}
+
+// HasEdge reports whether parent lists child in its children.
+func (d *Document) HasEdge(parent, child string) bool {
+	node, ok := d.Branches[parent]
+	if !ok {
+		return false
+	}
+	for _, c := range node.Children {
+		if c == child {
+			return true
+		}
+	}
+	return false
+}
+
+// UnlinkSubtree removes root and all descendants from the document.
+func (d *Document) UnlinkSubtree(root string) error {
+	if root == "" {
+		return fmt.Errorf("branch name is required")
+	}
+	if _, ok := d.Branches[root]; !ok {
+		return fmt.Errorf("branch %q not in tree", root)
+	}
+
+	parent, hasParent := d.ParentOf(root)
+	members := d.SubtreeNames(root)
+	for _, name := range members {
+		delete(d.Branches, name)
+	}
+
+	if hasParent {
+		node := d.Branches[parent]
+		filtered := node.Children[:0]
+		for _, c := range node.Children {
+			if c != root {
+				filtered = append(filtered, c)
+			}
+		}
+		node.Children = filtered
+		d.Branches[parent] = node
+	}
+
+	return nil
+}
