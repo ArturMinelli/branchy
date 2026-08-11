@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -316,6 +317,54 @@ func TestSyncFlowUnknownInbound(t *testing.T) {
 	view := m.View()
 	if !strings.Contains(view, "File count unavailable") {
 		t.Fatalf("expected unavailable confirm line, got:\n%s", view)
+	}
+}
+
+func TestSyncFlowApplyInboundRefreshesPickerAndConfirm(t *testing.T) {
+	m := newSyncFlowModel(testSyncProject(), "", SyncFlowOptions{})
+	m = m.applyInbound(map[string]inboundCount{"develop": {files: 7, ok: true}})
+	found := false
+	for _, item := range m.branchList.Items() {
+		bi := item.(branchItem)
+		if bi.name == "develop" && bi.Title() == "develop  7" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("expected picker badge to refresh to 7")
+	}
+
+	m = testSyncFlowAtConfirm()
+	m = m.applyInbound(map[string]inboundCount{"develop": {files: 11, ok: true}})
+	if !strings.Contains(m.View(), "11 files would change on develop") {
+		t.Fatalf("expected confirm refresh, got:\n%s", m.View())
+	}
+}
+
+func TestSyncFlowRemoteUpdateFailureKeepsSnapshot(t *testing.T) {
+	m := testSyncFlowAtConfirm()
+	m.inbound = map[string]inboundCount{"develop": {files: 7, ok: true}}
+	m = m.resetEdgeConfirm()
+	updated, _ := m.Update(remoteUpdateMsg{projectID: "test", path: "/tmp/test", err: errors.New("offline")})
+	flow := updated.(SyncFlowModel)
+	if !strings.Contains(flow.View(), "7 files would change on develop") {
+		t.Fatalf("failed update must keep confirm count:\n%s", flow.View())
+	}
+	if strings.Contains(strings.ToLower(flow.View()), "fetch") {
+		t.Fatalf("view must not mention fetch:\n%s", flow.View())
+	}
+}
+
+func TestSyncFlowKeysWorkDuringRemoteUpdate(t *testing.T) {
+	m := testSyncFlowAtConfirm()
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if cmd != nil {
+		t.Fatal("decline should not dispatch async cmd")
+	}
+	flow := updated.(SyncFlowModel)
+	if len(flow.results) != 1 {
+		t.Fatalf("expected skip while fetch may be in flight, got %d results", len(flow.results))
 	}
 }
 

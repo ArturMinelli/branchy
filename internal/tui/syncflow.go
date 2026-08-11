@@ -93,6 +93,18 @@ func newSyncFlowModel(p *project.Project, fromBranch string, opts SyncFlowOption
 	return m.prepareSyncFrom(fromBranch)
 }
 
+func (m SyncFlowModel) applyInbound(counts map[string]inboundCount) SyncFlowModel {
+	m.inbound = counts
+	if m.project != nil && m.step == stepSyncPickRoot {
+		title := "Select root branch to sync from"
+		m.branchList = newBranchListWithBadges(m.project.Tree.Names(), title, inboundBadges(m.inbound))
+	}
+	if m.step == stepSyncEdgeConfirm && len(m.edges) > 0 {
+		m = m.resetEdgeConfirm()
+	}
+	return m
+}
+
 func inboundBadges(counts map[string]inboundCount) map[string]string {
 	if counts == nil {
 		return nil
@@ -156,10 +168,21 @@ func (m SyncFlowModel) currentEdge() tree.Edge {
 	return m.edges[m.edgeIndex]
 }
 
-func (m SyncFlowModel) Init() tea.Cmd { return nil }
+func (m SyncFlowModel) Init() tea.Cmd {
+	if m.project != nil {
+		return remoteUpdateCmd(m.project)
+	}
+	return nil
+}
 
 func (m SyncFlowModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case remoteUpdateMsg:
+		if msg.err != nil || m.project == nil || msg.projectID != m.project.ID {
+			return m, nil
+		}
+		return m.applyInbound(loadInboundCounts(m.project.Path, m.project.Tree)), nil
+
 	case tea.WindowSizeMsg:
 		m.onResize(msg)
 		m.branchList.SetWidth(msg.Width)

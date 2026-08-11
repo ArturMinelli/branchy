@@ -127,9 +127,32 @@ func newModel(projects []*project.Project, preselected *project.Project) Model {
 	return m
 }
 
-func (m Model) Init() tea.Cmd { return nil }
+func (m Model) Init() tea.Cmd {
+	if m.current != nil {
+		return remoteUpdateCmd(m.current)
+	}
+	return nil
+}
+
+func (m Model) applyRemoteUpdate(msg remoteUpdateMsg) Model {
+	if m.current == nil || msg.projectID != m.current.ID {
+		return m
+	}
+	if msg.err != nil {
+		return m
+	}
+	counts := loadInboundCounts(m.current.Path, m.current.Tree)
+	m.treeView.setInbound(counts)
+	if m.screen == screenSync {
+		m.syncFlow = m.syncFlow.applyInbound(counts)
+	}
+	return m
+}
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if ru, ok := msg.(remoteUpdateMsg); ok {
+		return m.applyRemoteUpdate(ru), nil
+	}
 	if m.screen == screenSync {
 		var cmd tea.Cmd
 		var syncModel tea.Model
@@ -248,14 +271,16 @@ func (m Model) View() string {
 	return b.String()
 }
 
-func (m *Model) selectProject(p *project.Project) {
+func (m *Model) selectProject(p *project.Project) tea.Cmd {
 	m.current = p
 	m.screen = screenTree
 	m.errMsg = ""
 	m.treeView = newBranchTreeView(p.Tree)
-	if p != nil {
-		m.treeView.setInbound(loadInboundCounts(p.Path, p.Tree))
+	if p == nil {
+		return nil
 	}
+	m.treeView.setInbound(loadInboundCounts(p.Path, p.Tree))
+	return remoteUpdateCmd(p)
 }
 
 func (m Model) updateProjectPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -267,8 +292,7 @@ func (m Model) updateProjectPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if item, ok := m.projectList.SelectedItem().(projectItem); ok {
 			for _, p := range m.projects {
 				if p.ID == item.id {
-					m.selectProject(p)
-					break
+					return m, m.selectProject(p)
 				}
 			}
 		}
@@ -297,6 +321,7 @@ func (m Model) updateTree(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.syncFlow.height = m.height
 			m.screen = screenSync
 			m.errMsg = ""
+			return m, m.syncFlow.Init()
 		}
 		return m, nil
 	}
@@ -379,8 +404,7 @@ func (m Model) updateLink(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.errMsg = err.Error()
 			return m, nil
 		}
-		m.selectProject(m.current)
-		return m, nil
+		return m, m.selectProject(m.current)
 	}
 
 	if key.Matches(msg, keys.Quit) {
@@ -443,8 +467,7 @@ func (m Model) updateUnlink(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.unlinkTarget = ""
 		m.unlinkCount = 0
-		m.selectProject(m.current)
-		return m, nil
+		return m, m.selectProject(m.current)
 	}
 	return m, nil
 }

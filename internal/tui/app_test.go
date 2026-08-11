@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -91,5 +92,60 @@ func TestUpdateUnlinkConfirmRemovesSubtree(t *testing.T) {
 	}
 	if _, ok := model.current.Tree.Branches["feature-b"]; ok {
 		t.Fatal("feature-b should be removed after confirm")
+	}
+}
+
+func TestTreePaintsLocalInboundBeforeRemoteMsg(t *testing.T) {
+	p := unlinkTestProject()
+	m := newModel([]*project.Project{p}, p)
+	if m.treeView.inbound == nil {
+		t.Fatal("expected local inbound snapshot before remote update")
+	}
+	if cmd := m.Init(); cmd == nil {
+		t.Fatal("expected remote update cmd after project selected")
+	}
+}
+
+func TestRemoteUpdateRefreshesCurrentProject(t *testing.T) {
+	p := unlinkTestProject()
+	m := newModel([]*project.Project{p}, p)
+	m.treeView.setInbound(map[string]inboundCount{"feature-a": {files: 99, ok: true}})
+
+	updated, cmd := m.Update(remoteUpdateMsg{projectID: p.ID, path: p.Path})
+	if cmd != nil {
+		t.Fatal("refresh must not start another cmd")
+	}
+	model := updated.(Model)
+	c := model.treeView.inbound["feature-a"]
+	if c.files == 99 && c.ok {
+		t.Fatal("expected inbound counts to be recomputed")
+	}
+}
+
+func TestRemoteUpdateIgnoresOtherProject(t *testing.T) {
+	p := unlinkTestProject()
+	m := newModel([]*project.Project{p}, p)
+	m.treeView.setInbound(map[string]inboundCount{"feature-a": {files: 99, ok: true}})
+
+	updated, _ := m.Update(remoteUpdateMsg{projectID: "other", path: p.Path})
+	model := updated.(Model)
+	if model.treeView.inbound["feature-a"].files != 99 {
+		t.Fatal("foreign project must not refresh inbound")
+	}
+}
+
+func TestRemoteUpdateFailureKeepsSnapshot(t *testing.T) {
+	p := unlinkTestProject()
+	m := newModel([]*project.Project{p}, p)
+	m.treeView.setInbound(map[string]inboundCount{"feature-a": {files: 99, ok: true}})
+
+	updated, _ := m.Update(remoteUpdateMsg{projectID: p.ID, path: p.Path, err: errors.New("offline")})
+	model := updated.(Model)
+	if model.treeView.inbound["feature-a"].files != 99 {
+		t.Fatal("failed update must keep local snapshot")
+	}
+	view := strings.ToLower(model.View())
+	if strings.Contains(view, "fetch") {
+		t.Fatalf("view must not mention fetch failure:\n%s", model.View())
 	}
 }
