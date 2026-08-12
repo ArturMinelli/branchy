@@ -141,6 +141,86 @@ func TestInboundFilesChildOnlyChanges(t *testing.T) {
 	}
 }
 
+func TestOutboundFilesChildAhead(t *testing.T) {
+	dir := initTestRepo(t)
+	writeCommit(t, dir, "base.txt", "base", "initial")
+	runGit(t, dir, "checkout", "-b", "child")
+	writeCommit(t, dir, "a.txt", "a", "add a")
+	writeCommit(t, dir, "b.txt", "b", "add b")
+
+	n, err := OutboundFiles(dir, "main", "child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("expected 2 outbound files, got %d", n)
+	}
+}
+
+func TestOutboundFilesIdentical(t *testing.T) {
+	dir := initTestRepo(t)
+	writeCommit(t, dir, "base.txt", "base", "initial")
+	runGit(t, dir, "branch", "child")
+
+	n, err := OutboundFiles(dir, "main", "child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("expected 0 outbound files, got %d", n)
+	}
+}
+
+func TestOutboundFilesParentOnlyChanges(t *testing.T) {
+	dir := initTestRepo(t)
+	writeCommit(t, dir, "base.txt", "base", "initial")
+	runGit(t, dir, "checkout", "-b", "child")
+	runGit(t, dir, "checkout", "main")
+	writeCommit(t, dir, "only-parent.txt", "x", "parent unique")
+
+	n, err := OutboundFiles(dir, "main", "child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("parent-only files must not count as outbound, got %d", n)
+	}
+}
+
+func TestOutboundFilesMissingRef(t *testing.T) {
+	dir := initTestRepo(t)
+	writeCommit(t, dir, "base.txt", "base", "initial")
+
+	n, err := OutboundFiles(dir, "main", "missing")
+	if err == nil {
+		t.Fatal("expected error for missing ref")
+	}
+	if n != 0 {
+		t.Fatalf("error path must not return a count, got %d", n)
+	}
+}
+
+func TestOutboundFilesSymmetryWithInbound(t *testing.T) {
+	dir := initTestRepo(t)
+	writeCommit(t, dir, "base.txt", "base", "initial")
+	runGit(t, dir, "checkout", "-b", "child")
+	writeCommit(t, dir, "child.txt", "c", "child unique")
+	runGit(t, dir, "checkout", "main")
+	writeCommit(t, dir, "parent.txt", "p", "parent unique")
+
+	out, err := OutboundFiles(dir, "main", "child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inSwapped, err := InboundFiles(dir, "child", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out != inSwapped {
+		t.Fatalf("OutboundFiles(dir,p,c)=%d must equal InboundFiles(dir,c,p)=%d", out, inSwapped)
+	}
+}
+
 func initTestRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()

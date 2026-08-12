@@ -53,10 +53,10 @@ func TestTreeViewInboundBadges(t *testing.T) {
 		"develop": {},
 	}}
 	v := newBranchTreeView(doc)
-	v.setInbound(map[string]inboundCount{
+	v.setFileCounts(map[string]fileChangeCount{
 		"release": {files: 12, ok: true},
 		"develop": {files: 0, ok: true},
-	})
+	}, nil)
 
 	out := stripANSI(v.View())
 	if !strings.Contains(out, "release  12") {
@@ -77,10 +77,10 @@ func TestTreeViewUnknownBadge(t *testing.T) {
 		"missing": {},
 	}}
 	v := newBranchTreeView(doc)
-	v.setInbound(map[string]inboundCount{
+	v.setFileCounts(map[string]fileChangeCount{
 		"ok":      {files: 4, ok: true},
 		"missing": {ok: false},
-	})
+	}, nil)
 
 	out := stripANSI(v.View())
 	if !strings.Contains(out, "ok  4") {
@@ -91,5 +91,82 @@ func TestTreeViewUnknownBadge(t *testing.T) {
 	}
 	if strings.Contains(out, "missing  0") {
 		t.Fatalf("unknown must not look like zero:\n%s", out)
+	}
+}
+
+func TestTreeViewDirectionToggleBadges(t *testing.T) {
+	doc := &tree.Document{Branches: map[string]tree.BranchNode{
+		"main":  {Children: []string{"child"}},
+		"child": {},
+	}}
+	v := newBranchTreeView(doc)
+	v.setFileCounts(
+		map[string]fileChangeCount{"child": {files: 5, ok: true}},
+		map[string]fileChangeCount{"child": {files: 2, ok: true}},
+	)
+
+	in := stripANSI(v.View())
+	if !strings.Contains(in, "child  5") {
+		t.Fatalf("default inbound badge:\n%s", in)
+	}
+
+	v.setDirection(diffOutbound)
+	out := stripANSI(v.View())
+	if !strings.Contains(out, "child  2") {
+		t.Fatalf("outbound badge:\n%s", out)
+	}
+	if strings.Contains(out, "child  5") {
+		t.Fatalf("inbound badge must not remain in outbound mode:\n%s", out)
+	}
+
+	v.setDirection(diffInbound)
+	back := stripANSI(v.View())
+	if !strings.Contains(back, "child  5") {
+		t.Fatalf("restored inbound badge:\n%s", back)
+	}
+}
+
+func TestTreeViewZeroHidePerDirection(t *testing.T) {
+	doc := &tree.Document{Branches: map[string]tree.BranchNode{
+		"main":  {Children: []string{"child"}},
+		"child": {},
+	}}
+	v := newBranchTreeView(doc)
+	v.setFileCounts(
+		map[string]fileChangeCount{"child": {files: 3, ok: true}},
+		map[string]fileChangeCount{"child": {files: 0, ok: true}},
+	)
+
+	in := stripANSI(v.View())
+	if !strings.Contains(in, "child  3") {
+		t.Fatalf("inbound non-zero:\n%s", in)
+	}
+
+	v.setDirection(diffOutbound)
+	out := stripANSI(v.View())
+	if strings.Contains(out, "child  0") || strings.Contains(out, "child  3") {
+		t.Fatalf("outbound zero must hide badge:\n%s", out)
+	}
+}
+
+func TestTreeViewUnknownBothDirections(t *testing.T) {
+	doc := &tree.Document{Branches: map[string]tree.BranchNode{
+		"main":  {Children: []string{"missing"}},
+		"missing": {},
+	}}
+	v := newBranchTreeView(doc)
+	v.setFileCounts(
+		map[string]fileChangeCount{"missing": {ok: false}},
+		map[string]fileChangeCount{"missing": {ok: false}},
+	)
+
+	in := stripANSI(v.View())
+	if !strings.Contains(in, "missing  ?") {
+		t.Fatalf("inbound unknown:\n%s", in)
+	}
+	v.setDirection(diffOutbound)
+	out := stripANSI(v.View())
+	if !strings.Contains(out, "missing  ?") {
+		t.Fatalf("outbound unknown:\n%s", out)
 	}
 }

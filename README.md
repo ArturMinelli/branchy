@@ -53,6 +53,7 @@ Opens the branch tree viewer. Keys:
 - `m` — create a manual MR between two branches
 - `l` — link a new child branch (config only)
 - `u` — unlink selected branch and its subtree (config only)
+- `d` — toggle change-count direction (inbound parent→child ↔ outbound child→parent)
 - `esc` — back to project picker
 - `q` — quit
 

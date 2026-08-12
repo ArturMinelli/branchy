@@ -109,7 +109,7 @@ func TestTreePaintsLocalInboundBeforeRemoteMsg(t *testing.T) {
 func TestRemoteUpdateRefreshesCurrentProject(t *testing.T) {
 	p := unlinkTestProject()
 	m := newModel([]*project.Project{p}, p)
-	m.treeView.setInbound(map[string]inboundCount{"feature-a": {files: 99, ok: true}})
+	m.treeView.setFileCounts(map[string]fileChangeCount{"feature-a": {files: 99, ok: true}}, nil)
 
 	updated, cmd := m.Update(remoteUpdateMsg{projectID: p.ID, path: p.Path})
 	if cmd != nil {
@@ -125,7 +125,7 @@ func TestRemoteUpdateRefreshesCurrentProject(t *testing.T) {
 func TestRemoteUpdateIgnoresOtherProject(t *testing.T) {
 	p := unlinkTestProject()
 	m := newModel([]*project.Project{p}, p)
-	m.treeView.setInbound(map[string]inboundCount{"feature-a": {files: 99, ok: true}})
+	m.treeView.setFileCounts(map[string]fileChangeCount{"feature-a": {files: 99, ok: true}}, nil)
 
 	updated, _ := m.Update(remoteUpdateMsg{projectID: "other", path: p.Path})
 	model := updated.(Model)
@@ -137,7 +137,7 @@ func TestRemoteUpdateIgnoresOtherProject(t *testing.T) {
 func TestRemoteUpdateFailureKeepsSnapshot(t *testing.T) {
 	p := unlinkTestProject()
 	m := newModel([]*project.Project{p}, p)
-	m.treeView.setInbound(map[string]inboundCount{"feature-a": {files: 99, ok: true}})
+	m.treeView.setFileCounts(map[string]fileChangeCount{"feature-a": {files: 99, ok: true}}, nil)
 
 	updated, _ := m.Update(remoteUpdateMsg{projectID: p.ID, path: p.Path, err: errors.New("offline")})
 	model := updated.(Model)
@@ -149,3 +149,134 @@ func TestRemoteUpdateFailureKeepsSnapshot(t *testing.T) {
 		t.Fatalf("view must not mention fetch failure:\n%s", model.View())
 	}
 }
+
+func TestDirectionToggleFlipsBadgesAndFooter(t *testing.T) {
+	p := unlinkTestProject()
+	m := newModel([]*project.Project{p}, p)
+	m.treeView.setFileCounts(
+		map[string]fileChangeCount{"feature-a": {files: 5, ok: true}},
+		map[string]fileChangeCount{"feature-a": {files: 2, ok: true}},
+	)
+	m.treeView.setDirection(diffInbound)
+
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "feature-a  5") {
+		t.Fatalf("expected inbound badge:\n%s", view)
+	}
+	if !strings.Contains(view, "counts: inbound (parent→child)") || !strings.Contains(view, "d: show outbound") {
+		t.Fatalf("expected inbound footer:\n%s", view)
+	}
+
+	updated, _ := m.updateTree(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	model := updated.(Model)
+	if model.diffDirection != diffOutbound {
+		t.Fatal("expected outbound direction after d")
+	}
+	view = stripANSI(model.View())
+	if !strings.Contains(view, "feature-a  2") {
+		t.Fatalf("expected outbound badge:\n%s", view)
+	}
+	if !strings.Contains(view, "counts: outbound (child→parent)") || !strings.Contains(view, "d: show inbound") {
+		t.Fatalf("expected outbound footer:\n%s", view)
+	}
+
+	updated, _ = model.updateTree(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	model = updated.(Model)
+	if model.diffDirection != diffInbound {
+		t.Fatal("expected inbound restored")
+	}
+}
+
+func TestRemoteUpdateKeepsDirection(t *testing.T) {
+	p := unlinkTestProject()
+	m := newModel([]*project.Project{p}, p)
+	m.diffDirection = diffOutbound
+	m.treeView.setDirection(diffOutbound)
+	m.treeView.setFileCounts(
+		map[string]fileChangeCount{"feature-a": {files: 99, ok: true}},
+		map[string]fileChangeCount{"feature-a": {files: 88, ok: true}},
+	)
+
+	updated, _ := m.Update(remoteUpdateMsg{projectID: p.ID, path: p.Path})
+	model := updated.(Model)
+	if model.diffDirection != diffOutbound {
+		t.Fatal("remote refresh must not reset direction")
+	}
+	if model.treeView.direction != diffOutbound {
+		t.Fatal("tree direction must stay outbound after refresh")
+	}
+}
+
+func TestDirectionSurvivesSyncReturnAndProjectSwitch(t *testing.T) {
+	p := unlinkTestProject()
+	other := &project.Project{
+		ID:   "other",
+		Path: "/tmp/other",
+		Tree: &tree.Document{Branches: map[string]tree.BranchNode{
+			"main":  {Children: []string{"child"}},
+			"child": {},
+		}},
+	}
+	m := newModel([]*project.Project{p, other}, p)
+	updated, _ := m.updateTree(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	model := updated.(Model)
+	if model.diffDirection != diffOutbound {
+		t.Fatal("expected outbound after toggle")
+	}
+
+	// Simulate embedded sync finishing without running SyncFlowModel.Update.
+	model.screen = screenTree
+	model.syncFlow = SyncFlowModel{}
+	if model.diffDirection != diffOutbound {
+		t.Fatal("direction must survive sync return")
+	}
+
+	_ = model.selectProject(other)
+	if model.diffDirection != diffOutbound {
+		t.Fatal("direction must survive project switch")
+	}
+	if model.treeView.direction != diffOutbound {
+		t.Fatal("tree must mirror outbound after project switch")
+	}
+
+	fresh := newModel([]*project.Project{p}, p)
+	if fresh.diffDirection != diffInbound {
+		t.Fatal("new session must start inbound")
+	}
+}
+
+func TestSyncStaysInboundWhileTreeOutbound(t *testing.T) {
+	p := unlinkTestProject()
+	m := newModel([]*project.Project{p}, p)
+	m.diffDirection = diffOutbound
+	m.treeView.setDirection(diffOutbound)
+	m.treeView.setFileCounts(
+		map[string]fileChangeCount{
+			"feature-a": {files: 1, ok: true},
+			"feature-b": {files: 1, ok: true},
+		},
+		map[string]fileChangeCount{
+			"feature-a": {files: 9, ok: true},
+			"feature-b": {files: 9, ok: true},
+		},
+	)
+
+	updated, _ := m.updateTree(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	model := updated.(Model)
+	if model.screen != screenSync {
+		t.Fatalf("expected sync screen, got %d", model.screen)
+	}
+	// Sync flow loads its own inbound map from disk; inject inbound for the picker assertion.
+	model.syncFlow = model.syncFlow.applyInbound(map[string]fileChangeCount{
+		"feature-a": {files: 1, ok: true},
+		"feature-b": {files: 1, ok: true},
+	})
+	view := stripANSI(model.View())
+	if strings.Contains(view, "d: show") || strings.Contains(view, "counts: outbound") {
+		t.Fatalf("sync must not show direction footer:\n%s", view)
+	}
+	if strings.Contains(view, "feature-a  9") {
+		t.Fatalf("sync picker must not show outbound counts:\n%s", view)
+	}
+}
+

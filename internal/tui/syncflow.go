@@ -47,7 +47,7 @@ type SyncFlowModel struct {
 	branchList  list.Model
 	confirm     ConfirmModel
 	loading     LoadingModel
-	inbound     map[string]inboundCount
+	inbound     map[string]fileChangeCount
 	cancelled   bool
 	finished    bool
 	flowWindow
@@ -93,7 +93,7 @@ func newSyncFlowModel(p *project.Project, fromBranch string, opts SyncFlowOption
 	return m.prepareSyncFrom(fromBranch)
 }
 
-func (m SyncFlowModel) applyInbound(counts map[string]inboundCount) SyncFlowModel {
+func (m SyncFlowModel) applyInbound(counts map[string]fileChangeCount) SyncFlowModel {
 	m.inbound = counts
 	if m.project != nil && m.step == stepSyncPickRoot {
 		title := "Select root branch to sync from"
@@ -105,13 +105,13 @@ func (m SyncFlowModel) applyInbound(counts map[string]inboundCount) SyncFlowMode
 	return m
 }
 
-func inboundBadges(counts map[string]inboundCount) map[string]string {
+func inboundBadges(counts map[string]fileChangeCount) map[string]string {
 	if counts == nil {
 		return nil
 	}
 	badges := make(map[string]string, len(counts))
 	for name, c := range counts {
-		if b := formatInboundBadge(c); b != "" {
+		if b := formatFileChangeBadge(c); b != "" {
 			badges[name] = b
 		}
 	}

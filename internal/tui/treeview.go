@@ -28,10 +28,12 @@ type branchRow struct {
 
 // BranchTreeView is an always-expanded interactive tree navigator.
 type BranchTreeView struct {
-	rows    []branchRow
-	cursor  int
-	width   int
-	inbound map[string]inboundCount
+	rows      []branchRow
+	cursor    int
+	width     int
+	inbound   map[string]fileChangeCount
+	outbound  map[string]fileChangeCount
+	direction diffDirection
 }
 
 func newBranchTreeView(doc *tree.Document) BranchTreeView {
@@ -94,8 +96,20 @@ func collectRows(doc *tree.Document, name, prefix string, isLast, isRoot bool, r
 	}
 }
 
-func (v *BranchTreeView) setInbound(counts map[string]inboundCount) {
-	v.inbound = counts
+func (v *BranchTreeView) setFileCounts(inbound, outbound map[string]fileChangeCount) {
+	v.inbound = inbound
+	v.outbound = outbound
+}
+
+func (v *BranchTreeView) setDirection(d diffDirection) {
+	v.direction = d
+}
+
+func (v BranchTreeView) activeCounts() map[string]fileChangeCount {
+	if v.direction == diffOutbound {
+		return v.outbound
+	}
+	return v.inbound
 }
 
 func (v *BranchTreeView) rebuild(doc *tree.Document) {
@@ -141,8 +155,8 @@ func (v BranchTreeView) View() string {
 func (v BranchTreeView) renderRow(row branchRow, selected bool) string {
 	label := row.name
 	badge := ""
-	if c, ok := v.inbound[row.name]; ok {
-		badge = formatInboundBadge(c)
+	if c, ok := v.activeCounts()[row.name]; ok {
+		badge = formatFileChangeBadge(c)
 	}
 	if badge != "" {
 		label = row.name + "  " + badge

@@ -232,7 +232,7 @@ func TestSyncFlowConfirmViewUsesPanel(t *testing.T) {
 
 func TestSyncFlowPickerInboundBadges(t *testing.T) {
 	m := newSyncFlowModel(testSyncProject(), "", SyncFlowOptions{})
-	m.inbound = map[string]inboundCount{
+	m.inbound = map[string]fileChangeCount{
 		"develop":   {files: 7, ok: true},
 		"feature-a": {files: 0, ok: true},
 		"release":   {files: 2, ok: true},
@@ -264,7 +264,7 @@ func TestSyncFlowPickerInboundBadges(t *testing.T) {
 
 func TestSyncFlowConfirmShowsInboundCount(t *testing.T) {
 	m := testSyncFlowAtConfirm()
-	m.inbound = map[string]inboundCount{
+	m.inbound = map[string]fileChangeCount{
 		"develop": {files: 7, ok: true},
 	}
 	m = m.resetEdgeConfirm()
@@ -279,7 +279,7 @@ func TestSyncFlowConfirmShowsInboundCount(t *testing.T) {
 
 func TestSyncFlowConfirmShowsKnownZero(t *testing.T) {
 	m := testSyncFlowAtConfirm()
-	m.inbound = map[string]inboundCount{
+	m.inbound = map[string]fileChangeCount{
 		"develop": {files: 0, ok: true},
 	}
 	m = m.resetEdgeConfirm()
@@ -291,7 +291,7 @@ func TestSyncFlowConfirmShowsKnownZero(t *testing.T) {
 
 func TestSyncFlowUnknownInbound(t *testing.T) {
 	m := newSyncFlowModel(testSyncProject(), "", SyncFlowOptions{})
-	m.inbound = map[string]inboundCount{
+	m.inbound = map[string]fileChangeCount{
 		"develop":   {files: 3, ok: true},
 		"feature-a": {ok: false},
 	}
@@ -322,7 +322,7 @@ func TestSyncFlowUnknownInbound(t *testing.T) {
 
 func TestSyncFlowApplyInboundRefreshesPickerAndConfirm(t *testing.T) {
 	m := newSyncFlowModel(testSyncProject(), "", SyncFlowOptions{})
-	m = m.applyInbound(map[string]inboundCount{"develop": {files: 7, ok: true}})
+	m = m.applyInbound(map[string]fileChangeCount{"develop": {files: 7, ok: true}})
 	found := false
 	for _, item := range m.branchList.Items() {
 		bi := item.(branchItem)
@@ -336,7 +336,7 @@ func TestSyncFlowApplyInboundRefreshesPickerAndConfirm(t *testing.T) {
 	}
 
 	m = testSyncFlowAtConfirm()
-	m = m.applyInbound(map[string]inboundCount{"develop": {files: 11, ok: true}})
+	m = m.applyInbound(map[string]fileChangeCount{"develop": {files: 11, ok: true}})
 	if !strings.Contains(m.View(), "11 files would change on develop") {
 		t.Fatalf("expected confirm refresh, got:\n%s", m.View())
 	}
@@ -344,7 +344,7 @@ func TestSyncFlowApplyInboundRefreshesPickerAndConfirm(t *testing.T) {
 
 func TestSyncFlowRemoteUpdateFailureKeepsSnapshot(t *testing.T) {
 	m := testSyncFlowAtConfirm()
-	m.inbound = map[string]inboundCount{"develop": {files: 7, ok: true}}
+	m.inbound = map[string]fileChangeCount{"develop": {files: 7, ok: true}}
 	m = m.resetEdgeConfirm()
 	updated, _ := m.Update(remoteUpdateMsg{projectID: "test", path: "/tmp/test", err: errors.New("offline")})
 	flow := updated.(SyncFlowModel)

@@ -1,4 +1,4 @@
-// Inbound file-change counts are TUI-only. Scripted CLI paths do not display them.
+// File-change counts are TUI-only. Scripted CLI paths do not display them.
 package tui
 
 import (
@@ -9,14 +9,30 @@ import (
 	"branchy/internal/tree"
 )
 
-// inboundCount is the cached comparison of a child against its tree parent.
-type inboundCount struct {
+// diffDirection is the session-scoped main-tree count mode.
+type diffDirection int
+
+const (
+	diffInbound diffDirection = iota
+	diffOutbound
+)
+
+// fileChangeCount is the cached comparison of a child against its tree parent.
+type fileChangeCount struct {
 	files int
 	ok    bool
 }
 
-func loadInboundCounts(dir string, doc *tree.Document) map[string]inboundCount {
-	out := make(map[string]inboundCount)
+func loadInboundCounts(dir string, doc *tree.Document) map[string]fileChangeCount {
+	return loadFileChangeCounts(dir, doc, git.InboundFiles)
+}
+
+func loadOutboundCounts(dir string, doc *tree.Document) map[string]fileChangeCount {
+	return loadFileChangeCounts(dir, doc, git.OutboundFiles)
+}
+
+func loadFileChangeCounts(dir string, doc *tree.Document, compare func(dir, parent, child string) (int, error)) map[string]fileChangeCount {
+	out := make(map[string]fileChangeCount)
 	if doc == nil {
 		return out
 	}
@@ -25,28 +41,28 @@ func loadInboundCounts(dir string, doc *tree.Document) map[string]inboundCount {
 		if !hasParent {
 			continue
 		}
-		n, err := git.InboundFiles(dir, parent, name)
+		n, err := compare(dir, parent, name)
 		if err != nil {
-			out[name] = inboundCount{ok: false}
+			out[name] = fileChangeCount{ok: false}
 			continue
 		}
-		out[name] = inboundCount{files: n, ok: true}
+		out[name] = fileChangeCount{files: n, ok: true}
 	}
 	return out
 }
 
-func lookupInbound(counts map[string]inboundCount, name string) inboundCount {
+func lookupInbound(counts map[string]fileChangeCount, name string) fileChangeCount {
 	if counts == nil {
-		return inboundCount{}
+		return fileChangeCount{}
 	}
 	c, ok := counts[name]
 	if !ok {
-		return inboundCount{}
+		return fileChangeCount{}
 	}
 	return c
 }
 
-func formatInboundBadge(c inboundCount) string {
+func formatFileChangeBadge(c fileChangeCount) string {
 	if !c.ok {
 		return "?"
 	}
@@ -56,9 +72,18 @@ func formatInboundBadge(c inboundCount) string {
 	return strconv.Itoa(c.files)
 }
 
-func formatInboundConfirm(child string, c inboundCount) string {
+func formatInboundConfirm(child string, c fileChangeCount) string {
 	if !c.ok {
 		return "File count unavailable"
 	}
 	return fmt.Sprintf("%d files would change on %s", c.files, child)
+}
+
+func treeHelpFooter(d diffDirection) string {
+	switch d {
+	case diffOutbound:
+		return "↑/↓: navigate  d: show inbound  s: sync  m: mr  l: link  u: unlink  esc: projects  q: quit\ncounts: outbound (child→parent)"
+	default:
+		return "↑/↓: navigate  d: show outbound  s: sync  m: mr  l: link  u: unlink  esc: projects  q: quit\ncounts: inbound (parent→child)"
+	}
 }

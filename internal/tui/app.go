@@ -40,6 +40,7 @@ type Model struct {
 	projectList   list.Model
 	treeView      BranchTreeView
 	current       *project.Project
+	diffDirection diffDirection
 	syncFlow      SyncFlowModel
 	linkParent    string
 	linkChild     string
@@ -53,33 +54,35 @@ type Model struct {
 }
 
 type keyMap struct {
-	Up     key.Binding
-	Down   key.Binding
-	Enter  key.Binding
-	Back   key.Binding
-	Sync   key.Binding
-	Link   key.Binding
-	Unlink key.Binding
-	MR     key.Binding
-	Quit   key.Binding
-	Yes    key.Binding
-	No     key.Binding
-	Tab    key.Binding
+	Up        key.Binding
+	Down      key.Binding
+	Enter     key.Binding
+	Back      key.Binding
+	Sync      key.Binding
+	Link      key.Binding
+	Unlink    key.Binding
+	MR        key.Binding
+	Direction key.Binding
+	Quit      key.Binding
+	Yes       key.Binding
+	No        key.Binding
+	Tab       key.Binding
 }
 
 var keys = keyMap{
-	Up:     key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
-	Down:   key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
-	Enter:  key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select")),
-	Back:   key.NewBinding(key.WithKeys("esc", "b"), key.WithHelp("esc/b", "back")),
-	Sync:   key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sync")),
-	Link:   key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "link")),
-	Unlink: key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "unlink")),
-	MR:     key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "mr")),
-	Quit:   key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
-	Yes:    key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "yes")),
-	No:     key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "no")),
-	Tab:    key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next field")),
+	Up:        key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
+	Down:      key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
+	Enter:     key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select")),
+	Back:      key.NewBinding(key.WithKeys("esc", "b"), key.WithHelp("esc/b", "back")),
+	Sync:      key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sync")),
+	Link:      key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "link")),
+	Unlink:    key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "unlink")),
+	MR:        key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "mr")),
+	Direction: key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "direction")),
+	Quit:      key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+	Yes:       key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "yes")),
+	No:        key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "no")),
+	Tab:       key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next field")),
 }
 
 // Run starts the TUI for an optional pre-resolved project.
@@ -141,10 +144,12 @@ func (m Model) applyRemoteUpdate(msg remoteUpdateMsg) Model {
 	if msg.err != nil {
 		return m
 	}
-	counts := loadInboundCounts(m.current.Path, m.current.Tree)
-	m.treeView.setInbound(counts)
+	in := loadInboundCounts(m.current.Path, m.current.Tree)
+	out := loadOutboundCounts(m.current.Path, m.current.Tree)
+	m.treeView.setFileCounts(in, out)
+	m.treeView.setDirection(m.diffDirection)
 	if m.screen == screenSync {
-		m.syncFlow = m.syncFlow.applyInbound(counts)
+		m.syncFlow = m.syncFlow.applyInbound(in)
 	}
 	return m
 }
@@ -242,7 +247,12 @@ func (m Model) View() string {
 			b.WriteString(m.treeView.View())
 			b.WriteString("\n")
 		}
-		b.WriteString(RenderHelp("↑/↓: navigate  s: sync  m: mr  l: link  u: unlink  esc: projects  q: quit"))
+		for i, line := range strings.Split(treeHelpFooter(m.diffDirection), "\n") {
+			if i > 0 {
+				b.WriteString("\n")
+			}
+			b.WriteString(RenderHelp(line))
+		}
 	case screenUnlinkConfirm:
 		b.WriteString(m.unlinkConfirm.View())
 	case screenLink:
@@ -279,7 +289,8 @@ func (m *Model) selectProject(p *project.Project) tea.Cmd {
 	if p == nil {
 		return nil
 	}
-	m.treeView.setInbound(loadInboundCounts(p.Path, p.Tree))
+	m.treeView.setFileCounts(loadInboundCounts(p.Path, p.Tree), loadOutboundCounts(p.Path, p.Tree))
+	m.treeView.setDirection(m.diffDirection)
 	return remoteUpdateCmd(p)
 }
 
@@ -373,6 +384,15 @@ func (m Model) updateTree(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mrFlow.branchList.SetHeight(m.height - 6)
 		m.screen = screenMR
 		m.errMsg = ""
+		return m, nil
+	}
+	if key.Matches(msg, keys.Direction) {
+		if m.diffDirection == diffInbound {
+			m.diffDirection = diffOutbound
+		} else {
+			m.diffDirection = diffInbound
+		}
+		m.treeView.setDirection(m.diffDirection)
 		return m, nil
 	}
 	if key.Matches(msg, keys.Up) {
