@@ -70,23 +70,43 @@ func TestInboundFilesRemoteTrackingChild(t *testing.T) {
 	}
 }
 
-func TestInboundFilesPrefersLocalOverRemote(t *testing.T) {
+func TestInboundFilesPrefersRemoteChildOverStaleLocal(t *testing.T) {
 	dir := initTestRepo(t)
 	writeCommit(t, dir, "base.txt", "base", "initial")
-	runGit(t, dir, "branch", "child")
-	runGit(t, dir, "checkout", "-b", "tmp")
-	writeCommit(t, dir, "remote-only.txt", "x", "on remote tip")
-	sha := strings.TrimSpace(gitOutput(t, dir, "rev-parse", "HEAD"))
+	runGit(t, dir, "checkout", "-b", "child")
 	runGit(t, dir, "checkout", "main")
-	runGit(t, dir, "branch", "-D", "tmp")
-	runGit(t, dir, "update-ref", "refs/remotes/origin/child", sha)
+	writeCommit(t, dir, "a.txt", "a", "add a")
+	writeCommit(t, dir, "b.txt", "b", "add b")
+	tip := strings.TrimSpace(gitOutput(t, dir, "rev-parse", "HEAD"))
+	runGit(t, dir, "update-ref", "refs/remotes/origin/main", tip)
+	runGit(t, dir, "update-ref", "refs/remotes/origin/child", tip)
 
 	n, err := InboundFiles(dir, "main", "child")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if n != 0 {
-		t.Fatalf("local child is in sync; must not use remote tip, got %d", n)
+		t.Fatalf("origin/child already has parent tip; stale local child must not count, got %d", n)
+	}
+}
+
+func TestInboundFilesPrefersRemoteParentOverStaleLocal(t *testing.T) {
+	dir := initTestRepo(t)
+	writeCommit(t, dir, "base.txt", "base", "initial")
+	runGit(t, dir, "branch", "child")
+	runGit(t, dir, "checkout", "-b", "tmp")
+	writeCommit(t, dir, "remote-parent.txt", "x", "on origin/main")
+	sha := strings.TrimSpace(gitOutput(t, dir, "rev-parse", "HEAD"))
+	runGit(t, dir, "checkout", "main")
+	runGit(t, dir, "branch", "-D", "tmp")
+	runGit(t, dir, "update-ref", "refs/remotes/origin/main", sha)
+
+	n, err := InboundFiles(dir, "main", "child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 inbound file from origin/main, got %d", n)
 	}
 }
 

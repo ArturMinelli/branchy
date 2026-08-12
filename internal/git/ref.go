@@ -8,8 +8,11 @@ import (
 )
 
 // ResolveRef maps a branch tree name to a git revision.
-// Preference: local branch, then a remote-tracking branch (origin first),
+// Preference: remote-tracking branch (origin first), then a local branch,
 // then whatever git already resolves (tag, etc.).
+//
+// Remote-tracking wins so inbound counts match GitLab after fetch, even when
+// a stale local checkout of the same name still exists.
 func ResolveRef(dir, name string) (string, error) {
 	if dir == "" || name == "" {
 		return "", fmt.Errorf("dir and name are required")
@@ -19,15 +22,15 @@ func ResolveRef(dir, name string) (string, error) {
 		return "", err
 	}
 
-	local := "refs/heads/" + name
-	if revExists(abs, local) {
-		return local, nil
-	}
-
 	for _, ref := range remoteTrackingRefs(abs, name) {
 		if revExists(abs, ref) {
 			return ref, nil
 		}
+	}
+
+	local := "refs/heads/" + name
+	if revExists(abs, local) {
+		return local, nil
 	}
 
 	if revExists(abs, name) {
