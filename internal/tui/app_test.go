@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"branchy/internal/project"
+	"branchy/internal/sync"
 	"branchy/internal/tree"
 )
 
@@ -245,38 +246,51 @@ func TestDirectionSurvivesSyncReturnAndProjectSwitch(t *testing.T) {
 	}
 }
 
-func TestSyncStaysInboundWhileTreeOutbound(t *testing.T) {
+func TestSyncFollowsTreeOutbound(t *testing.T) {
 	p := unlinkTestProject()
 	m := newModel([]*project.Project{p}, p)
 	m.diffDirection = diffOutbound
 	m.treeView.setDirection(diffOutbound)
-	m.treeView.setFileCounts(
-		map[string]fileChangeCount{
-			"feature-a": {files: 1, ok: true},
-			"feature-b": {files: 1, ok: true},
-		},
-		map[string]fileChangeCount{
-			"feature-a": {files: 9, ok: true},
-			"feature-b": {files: 9, ok: true},
-		},
-	)
+	for i, row := range m.treeView.rows {
+		if row.name == "develop" {
+			m.treeView.cursor = i
+			break
+		}
+	}
 
 	updated, _ := m.updateTree(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
 	model := updated.(Model)
 	if model.screen != screenSync {
 		t.Fatalf("expected sync screen, got %d", model.screen)
 	}
-	// Sync flow loads its own inbound map from disk; inject inbound for the picker assertion.
-	model.syncFlow = model.syncFlow.applyInbound(map[string]fileChangeCount{
-		"feature-a": {files: 1, ok: true},
-		"feature-b": {files: 1, ok: true},
-	})
+	if model.syncFlow.direction != sync.Upward {
+		t.Fatal("outbound tree s must start upward sync")
+	}
+	if model.syncFlow.fromBranch != "develop" {
+		t.Fatalf("ceiling should be develop, got %q", model.syncFlow.fromBranch)
+	}
 	view := stripANSI(model.View())
 	if strings.Contains(view, "d: show") || strings.Contains(view, "counts: outbound") {
-		t.Fatalf("sync must not show direction footer:\n%s", view)
-	}
-	if strings.Contains(view, "feature-a  9") {
-		t.Fatalf("sync picker must not show outbound counts:\n%s", view)
+		t.Fatalf("embedded confirm must not show direction toggle:\n%s", view)
 	}
 }
 
+func TestSyncFollowsTreeInbound(t *testing.T) {
+	p := unlinkTestProject()
+	m := newModel([]*project.Project{p}, p)
+	for i, row := range m.treeView.rows {
+		if row.name == "develop" {
+			m.treeView.cursor = i
+			break
+		}
+	}
+
+	updated, _ := m.updateTree(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	model := updated.(Model)
+	if model.syncFlow.direction != sync.Downward {
+		t.Fatal("inbound tree s must start downward sync")
+	}
+	if model.syncFlow.fromBranch != "develop" {
+		t.Fatalf("ceiling should be develop, got %q", model.syncFlow.fromBranch)
+	}
+}

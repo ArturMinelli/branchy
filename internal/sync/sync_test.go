@@ -3,6 +3,8 @@ package sync
 import (
 	"errors"
 	"testing"
+
+	"branchy/internal/tree"
 )
 
 func TestCreatedURLsFiltersAndPreservesOrder(t *testing.T) {
@@ -86,5 +88,61 @@ func TestOpenURLsSequentialAndWarning(t *testing.T) {
 	}
 	if warn == "" {
 		t.Fatal("expected warning for failed open")
+	}
+}
+
+func TestEnds(t *testing.T) {
+	edge := tree.Edge{Parent: "develop", Child: "feat-a"}
+	src, tgt := Ends(edge, Downward)
+	if src != "develop" || tgt != "feat-a" {
+		t.Fatalf("downward: got %s → %s", src, tgt)
+	}
+	src, tgt = Ends(edge, Upward)
+	if src != "feat-a" || tgt != "develop" {
+		t.Fatalf("upward: got %s → %s", src, tgt)
+	}
+}
+
+func TestEdgesBelowMatchesTreeWalks(t *testing.T) {
+	doc := &tree.Document{Branches: map[string]tree.BranchNode{
+		"develop": {Children: []string{"feat-a", "feat-b"}},
+		"feat-a":  {Children: []string{"leaf"}},
+		"feat-b":  {},
+		"leaf":    {},
+	}}
+
+	down := EdgesBelow(doc, "develop", Downward)
+	wantDown := doc.CollectEdges("develop")
+	if len(down) != len(wantDown) {
+		t.Fatalf("downward count %d != %d", len(down), len(wantDown))
+	}
+	for i := range down {
+		if down[i] != wantDown[i] {
+			t.Fatalf("downward[%d]: got %+v want %+v", i, down[i], wantDown[i])
+		}
+	}
+
+	up := EdgesBelow(doc, "develop", Upward)
+	wantUp := doc.CollectEdgesUpward("develop")
+	if len(up) != len(wantUp) {
+		t.Fatalf("upward count %d != %d", len(up), len(wantUp))
+	}
+	for i := range up {
+		if up[i] != wantUp[i] {
+			t.Fatalf("upward[%d]: got %+v want %+v", i, up[i], wantUp[i])
+		}
+	}
+}
+
+func TestResultArrowPrefersSourceTarget(t *testing.T) {
+	r := Result{Parent: "p", Child: "c", Source: "c", Target: "p"}
+	src, tgt := r.Arrow()
+	if src != "c" || tgt != "p" {
+		t.Fatalf("got %s → %s", src, tgt)
+	}
+	legacy := Result{Parent: "p", Child: "c"}
+	src, tgt = legacy.Arrow()
+	if src != "p" || tgt != "c" {
+		t.Fatalf("legacy fallback: got %s → %s", src, tgt)
 	}
 }

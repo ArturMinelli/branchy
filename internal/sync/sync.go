@@ -12,13 +12,51 @@ import (
 	"branchy/internal/tree"
 )
 
+// Direction chooses walk order and MR ends for a sync run.
+// The zero value is Downward (parent → child, pre-order).
+type Direction int
+
+const (
+	Downward Direction = iota
+	Upward
+)
+
+// Ends returns the MR source and target for an edge in the given direction.
+func Ends(edge tree.Edge, dir Direction) (source, target string) {
+	if dir == Upward {
+		return edge.Child, edge.Parent
+	}
+	return edge.Parent, edge.Child
+}
+
+// EdgesBelow returns descendant edges of root in the walk order for dir.
+func EdgesBelow(doc *tree.Document, root string, dir Direction) []tree.Edge {
+	if doc == nil {
+		return nil
+	}
+	if dir == Upward {
+		return doc.CollectEdgesUpward(root)
+	}
+	return doc.CollectEdges(root)
+}
+
 // Result summarizes one MR attempt.
 type Result struct {
 	Parent  string
 	Child   string
+	Source  string
+	Target  string
 	Action  string // created, skipped, failed
 	URL     string
 	Message string
+}
+
+// Arrow returns the display ends for this result (MR source → target).
+func (r Result) Arrow() (source, target string) {
+	if r.Source != "" || r.Target != "" {
+		return r.Source, r.Target
+	}
+	return r.Parent, r.Child
 }
 
 // Summary aggregates a sync run.
@@ -29,6 +67,7 @@ type Summary struct {
 // Options configures an MR sync run.
 type Options struct {
 	FromBranch string
+	Direction  Direction
 	Confirm    func(parent, child string) (bool, error)
 }
 
@@ -48,7 +87,7 @@ func Run(p *project.Project, opts Options) (*Summary, error) {
 		return nil, fmt.Errorf("glab auth: %w (run: glab auth login)", err)
 	}
 
-	edges := p.Tree.CollectEdges(opts.FromBranch)
+	edges := EdgesBelow(p.Tree, opts.FromBranch, opts.Direction)
 	if len(edges) == 0 {
 		return &Summary{}, nil
 	}
@@ -64,8 +103,8 @@ func Run(p *project.Project, opts Options) (*Summary, error) {
 }
 
 // RunEdge creates an MR for a single edge without confirmation.
-func RunEdge(p *project.Project, edge tree.Edge) Result {
-	return processEdge(p, edge, Options{})
+func RunEdge(p *project.Project, edge tree.Edge, dir Direction) Result {
+	return processEdge(p, edge, Options{Direction: dir})
 }
 
 // CreatedURLs returns MR URLs for created results in DFS order.
@@ -125,7 +164,8 @@ func OpenURLs(urls []string) string {
 }
 
 func processEdge(p *project.Project, edge tree.Edge, opts Options) Result {
-	res := Result{Parent: edge.Parent, Child: edge.Child}
+	source, target := Ends(edge, opts.Direction)
+	res := Result{Parent: edge.Parent, Child: edge.Child, Source: source, Target: target}
 
 	if opts.Confirm != nil {
 		ok, err := opts.Confirm(edge.Parent, edge.Child)
@@ -143,9 +183,9 @@ func processEdge(p *project.Project, edge tree.Edge, opts Options) Result {
 
 	ts := time.Now().Format("2006-01-02 15:04:05 -0700")
 	mrRes, err := mr.Create(p, mr.CreateRequest{
-		Source:      edge.Parent,
-		Target:      edge.Child,
-		Title:       fmt.Sprintf("Sync: %s → %s", edge.Parent, edge.Child),
+		Source:      source,
+		Target:      target,
+		Title:       fmt.Sprintf("Sync: %s → %s", source, target),
 		Description: fmt.Sprintf("Automated branch sync created by branchy on %s.", ts),
 	})
 	if err != nil {

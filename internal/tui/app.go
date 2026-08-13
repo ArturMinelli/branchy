@@ -149,7 +149,7 @@ func (m Model) applyRemoteUpdate(msg remoteUpdateMsg) Model {
 	m.treeView.setFileCounts(in, out)
 	m.treeView.setDirection(m.diffDirection)
 	if m.screen == screenSync {
-		m.syncFlow = m.syncFlow.applyInbound(in)
+		m.syncFlow = m.syncFlow.applyFileCounts(in, out)
 	}
 	return m
 }
@@ -327,7 +327,10 @@ func (m Model) updateTree(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if key.Matches(msg, keys.Sync) {
 		if name := m.treeView.selectedName(); name != "" {
-			m.syncFlow = newSyncFlowModel(m.current, name, SyncFlowOptions{Embedded: true})
+			m.syncFlow = newSyncFlowModel(m.current, name, SyncFlowOptions{
+				Embedded:  true,
+				Direction: syncDirection(m.diffDirection),
+			})
 			m.syncFlow.width = m.width
 			m.syncFlow.height = m.height
 			m.screen = screenSync

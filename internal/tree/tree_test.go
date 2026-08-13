@@ -7,11 +7,11 @@ import (
 
 func TestCollectEdges(t *testing.T) {
 	doc := &Document{Branches: map[string]BranchNode{
-		"main":     {Children: []string{"release"}},
-		"release":  {Children: []string{"develop"}},
-		"develop":  {Children: []string{"feat-a", "feat-b"}},
-		"feat-a":   {},
-		"feat-b":   {},
+		"main":    {Children: []string{"release"}},
+		"release": {Children: []string{"develop"}},
+		"develop": {Children: []string{"feat-a", "feat-b"}},
+		"feat-a":  {},
+		"feat-b":  {},
 	}}
 
 	edges := doc.CollectEdges("main")
@@ -20,6 +20,57 @@ func TestCollectEdges(t *testing.T) {
 	}
 	if edges[0].Parent != "main" || edges[0].Child != "release" {
 		t.Fatalf("unexpected first edge: %+v", edges[0])
+	}
+}
+
+func TestCollectEdgesUpward(t *testing.T) {
+	doc := &Document{Branches: map[string]BranchNode{
+		"develop": {Children: []string{"feat-a", "feat-b"}},
+		"feat-a":  {Children: []string{"leaf"}},
+		"feat-b":  {},
+		"leaf":    {},
+	}}
+
+	down := doc.CollectEdges("develop")
+	up := doc.CollectEdgesUpward("develop")
+	if len(up) != len(down) {
+		t.Fatalf("membership size: down %d up %d", len(down), len(up))
+	}
+
+	type pair struct{ p, c string }
+	set := map[pair]int{}
+	for _, e := range down {
+		set[pair{e.Parent, e.Child}]++
+	}
+	for _, e := range up {
+		key := pair{e.Parent, e.Child}
+		if set[key] == 0 {
+			t.Fatalf("upward extra edge %s → %s", e.Parent, e.Child)
+		}
+		set[key]--
+	}
+	for k, n := range set {
+		if n != 0 {
+			t.Fatalf("missing or extra %s → %s (%d)", k.p, k.c, n)
+		}
+	}
+
+	if len(up) != 3 {
+		t.Fatalf("expected 3 edges below develop, got %d", len(up))
+	}
+	if up[0].Parent != "feat-a" || up[0].Child != "leaf" {
+		t.Fatalf("first upward edge should be deepest, got %+v", up[0])
+	}
+	if up[1].Parent != "develop" || up[1].Child != "feat-a" {
+		t.Fatalf("second upward edge should be develop→feat-a, got %+v", up[1])
+	}
+	if up[2].Parent != "develop" || up[2].Child != "feat-b" {
+		t.Fatalf("sibling order should stay feat-a then feat-b, got %+v", up[2])
+	}
+
+	// Reversed pre-order would start at develop→feat-b, not feat-a→leaf.
+	if down[len(down)-1].Child == "feat-b" && up[0].Child != "leaf" {
+		t.Fatal("CollectEdgesUpward must not be a reversed CollectEdges slice")
 	}
 }
 
@@ -71,9 +122,9 @@ func TestLoadNormalizesChildren(t *testing.T) {
 
 func TestRoots(t *testing.T) {
 	doc := &Document{Branches: map[string]BranchNode{
-		"main":    {Children: []string{"a"}},
-		"orphan":  {},
-		"a":       {},
+		"main":   {Children: []string{"a"}},
+		"orphan": {},
+		"a":      {},
 	}}
 	roots := doc.Roots()
 	if len(roots) != 2 {

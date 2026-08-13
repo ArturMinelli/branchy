@@ -88,14 +88,25 @@ func (d *Document) Roots() []string {
 	return roots
 }
 
-// CollectEdges returns all parent→child edges below root (DFS).
+// CollectEdges returns all parent→child edges below root in DFS pre-order
+// (parent edge, then descendants). Used for downward sync.
 func (d *Document) CollectEdges(root string) []Edge {
+	return d.collectEdges(root, false)
+}
+
+// CollectEdgesUpward returns the same edges as CollectEdges in post-order
+// (descendants, then the parent edge). Used for upward sync.
+func (d *Document) CollectEdgesUpward(root string) []Edge {
+	return d.collectEdges(root, true)
+}
+
+func (d *Document) collectEdges(parent string, upward bool) []Edge {
 	var edges []Edge
-	d.collectEdges(root, &edges)
+	d.walkEdges(parent, upward, &edges)
 	return edges
 }
 
-func (d *Document) collectEdges(parent string, edges *[]Edge) {
+func (d *Document) walkEdges(parent string, upward bool, edges *[]Edge) {
 	node, ok := d.Branches[parent]
 	if !ok {
 		return
@@ -103,8 +114,13 @@ func (d *Document) collectEdges(parent string, edges *[]Edge) {
 	children := append([]string(nil), node.Children...)
 	sort.Strings(children)
 	for _, child := range children {
+		if upward {
+			d.walkEdges(child, true, edges)
+			*edges = append(*edges, Edge{Parent: parent, Child: child})
+			continue
+		}
 		*edges = append(*edges, Edge{Parent: parent, Child: child})
-		d.collectEdges(child, edges)
+		d.walkEdges(child, false, edges)
 	}
 }
 

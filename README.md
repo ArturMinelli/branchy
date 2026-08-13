@@ -49,7 +49,7 @@ branchy
 
 Opens the branch tree viewer. Keys:
 
-- `s` — sync MRs from selected branch
+- `s` — sync MRs from selected branch (inbound = downward parent→child; outbound = upward child→parent)
 - `m` — create a manual MR between two branches
 - `l` — link a new child branch (config only)
 - `u` — unlink selected branch and its subtree (config only)
@@ -107,11 +107,16 @@ From the main TUI, press `m` on a selected branch to start an MR with that branc
 
 ## Sync behavior
 
-For a chosen root branch, branchy walks the tree depth-first and prompts to create a GitLab MR for each parent→child edge (`parent` → `child`). In the TUI (`s` key or `branchy sync`), each edge is confirmed individually — there is no bulk "create all" step. Edges that already have an open MR are skipped (with the existing URL shown), not failed.
+Interactive sync follows the tree’s count direction. **Downward** (inbound, the default) walks descendants top-down and creates parent → child merge requests. **Upward** (outbound) walks the same descendant edges deepest-first and creates child → parent merge requests, stopping at the branch you started from.
 
-After sync completes, if any confirmed edges have an MR URL (newly created or already open), branchy asks whether to open them in the browser. Tabs open in tree order. User-declined edges are excluded. The plain CLI behaves the same way: per-edge prompts (skipped with `-y`), then an optional end browser prompt.
+In the TUI, press `d` on the main tree then `s` on a branch to sync in that direction. Standalone `branchy sync` (no flags) starts downward and offers the same `d` toggle on the root picker. Each edge is confirmed individually — there is no bulk "create all" step. Edges that already have an open MR in that same direction are skipped (with the existing URL shown), not failed.
+
+After sync completes, if any confirmed edges have an MR URL (newly created or already open), branchy asks whether to open them in the browser. Tabs open in offer order. User-declined edges are excluded.
+
+Scripted sync (`--from` / `-y`) stays downward only — parent → child, top-down. There is no direction flag.
 
 ```bash
-branchy sync --from develop           # per-edge prompts + end browser prompt
-branchy sync --from develop -y        # skip per-edge prompts; browser still prompts at end
+branchy sync                          # TUI: picker (d toggles direction) → per-edge confirm
+branchy sync --from develop           # plain CLI: downward only; per-edge prompts + end browser prompt
+branchy sync --from develop -y        # plain CLI: skip per-edge prompts; browser still prompts at end
 ```

@@ -72,11 +72,15 @@ func formatFileChangeBadge(c fileChangeCount) string {
 	return strconv.Itoa(c.files)
 }
 
-func formatInboundConfirm(child string, c fileChangeCount) string {
+func formatFileChangeConfirm(branch string, c fileChangeCount) string {
 	if !c.ok {
 		return "File count unavailable"
 	}
-	return fmt.Sprintf("%d files would change on %s", c.files, child)
+	return fmt.Sprintf("%d files would change on %s", c.files, branch)
+}
+
+func formatInboundConfirm(child string, c fileChangeCount) string {
+	return formatFileChangeConfirm(child, c)
 }
 
 func treeHelpFooter(d diffDirection) string {

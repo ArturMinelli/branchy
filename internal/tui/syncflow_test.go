@@ -275,6 +275,9 @@ func TestSyncFlowConfirmShowsInboundCount(t *testing.T) {
 	if !strings.Contains(view, "Create MR main → develop?") {
 		t.Fatal("question text must stay unchanged")
 	}
+	if !strings.Contains(view, "Sync down from main") {
+		t.Fatalf("expected downward context, got:\n%s", view)
+	}
 }
 
 func TestSyncFlowConfirmShowsKnownZero(t *testing.T) {
@@ -395,4 +398,193 @@ func TestSyncFlowYesEntersLoading(t *testing.T) {
 	if !flow.loading.Active() {
 		t.Fatal("expected loading active")
 	}
+}
+
+func testDeepSyncProject() *project.Project {
+	return &project.Project{
+		ID:   "test",
+		Path: "/tmp/test",
+		Tree: &tree.Document{Branches: map[string]tree.BranchNode{
+			"develop":   {Children: []string{"feature-a", "feature-b"}},
+			"feature-a": {Children: []string{"leaf"}},
+			"feature-b": {},
+			"leaf":      {},
+		}},
+	}
+}
+
+func testSyncFlowUpward() SyncFlowModel {
+	p := testDeepSyncProject()
+	m := SyncFlowModel{
+		project:    p,
+		fromBranch: "develop",
+		direction:  sync.Upward,
+		edges:      sync.EdgesBelow(p.Tree, "develop", sync.Upward),
+		edgeIndex:  0,
+		step:       stepSyncEdgeConfirm,
+		opts:       SyncFlowOptions{Embedded: true, Direction: sync.Upward},
+	}
+	return m.resetEdgeConfirm()
+}
+
+func TestSyncFlowUpwardOfferOrder(t *testing.T) {
+	m := testSyncFlowUpward()
+	if len(m.edges) != 3 {
+		t.Fatalf("expected 3 edges, got %d", len(m.edges))
+	}
+	if m.edges[0].Parent != "feature-a" || m.edges[0].Child != "leaf" {
+		t.Fatalf("first edge should be deepest, got %+v", m.edges[0])
+	}
+	for _, e := range m.edges {
+		if e.Parent == "main" {
+			t.Fatal("must not include edges above the ceiling")
+		}
+	}
+	view := m.View()
+	if !strings.Contains(view, "Create MR leaf → feature-a?") {
+		t.Fatalf("expected child→parent question, got:\n%s", view)
+	}
+	if !strings.Contains(view, "Sync up to develop") {
+		t.Fatalf("expected upward context, got:\n%s", view)
+	}
+	if strings.Contains(view, "d: show") {
+		t.Fatalf("confirm must not offer direction toggle:\n%s", view)
+	}
+}
+
+func TestSyncFlowUpwardDeclineContinues(t *testing.T) {
+	m := testSyncFlowUpward()
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if cmd != nil {
+		t.Fatal("decline should not dispatch async cmd")
+	}
+	flow := updated.(SyncFlowModel)
+	if len(flow.results) != 1 || flow.results[0].Action != mr.ActionSkipped {
+		t.Fatalf("expected skipped result, got %+v", flow.results)
+	}
+	if flow.results[0].Source != "leaf" || flow.results[0].Target != "feature-a" {
+		t.Fatalf("skip should record MR ends, got %s → %s", flow.results[0].Source, flow.results[0].Target)
+	}
+	if flow.step != stepSyncEdgeConfirm {
+		t.Fatalf("expected next confirm, got %d", flow.step)
+	}
+	if !strings.Contains(flow.View(), "Create MR feature-a → develop?") {
+		t.Fatalf("second edge should be feature-a → develop:\n%s", flow.View())
+	}
+}
+
+func TestSyncFlowUpwardCountsOnParent(t *testing.T) {
+	m := testSyncFlowUpward()
+	m.inbound = map[string]fileChangeCount{"leaf": {files: 1, ok: true}}
+	m.outbound = map[string]fileChangeCount{"leaf": {files: 9, ok: true}}
+	m = m.resetEdgeConfirm()
+	view := m.View()
+	if !strings.Contains(view, "9 files would change on feature-a") {
+		t.Fatalf("upward confirm should show outbound on parent:\n%s", view)
+	}
+	if strings.Contains(view, "1 files would change") {
+		t.Fatalf("must not show inbound count:\n%s", view)
+	}
+}
+
+func TestSyncFlowDownwardKeepsInboundCount(t *testing.T) {
+	m := testSyncFlowAtConfirm()
+	m.inbound = map[string]fileChangeCount{"develop": {files: 4, ok: true}}
+	m.outbound = map[string]fileChangeCount{"develop": {files: 9, ok: true}}
+	m = m.resetEdgeConfirm()
+	view := m.View()
+	if !strings.Contains(view, "4 files would change on develop") {
+		t.Fatalf("downward confirm should show inbound on child:\n%s", view)
+	}
+	if strings.Contains(view, "9 files would change") {
+		t.Fatalf("must not show outbound count:\n%s", view)
+	}
+	if !strings.Contains(view, "Sync down from main") {
+		t.Fatalf("expected downward context:\n%s", view)
+	}
+}
+
+func TestSyncFlowUpwardKnownZeroOnParent(t *testing.T) {
+	m := testSyncFlowUpward()
+	m.outbound = map[string]fileChangeCount{"leaf": {files: 0, ok: true}}
+	m = m.resetEdgeConfirm()
+	if !strings.Contains(m.View(), "0 files would change on feature-a") {
+		t.Fatalf("expected known zero on parent:\n%s", m.View())
+	}
+}
+
+func TestSyncFlowStandalonePickerStartsDownward(t *testing.T) {
+	m := newSyncFlowModel(testSyncProject(), "", SyncFlowOptions{})
+	if m.direction != sync.Downward {
+		t.Fatalf("standalone must start downward, got %d", m.direction)
+	}
+	view := m.View()
+	if !strings.Contains(view, "sync: downward (parent→child)") || !strings.Contains(view, "d: show upward") {
+		t.Fatalf("picker help:\n%s", view)
+	}
+}
+
+func TestSyncFlowStandalonePickerToggle(t *testing.T) {
+	m := newSyncFlowModel(testDeepSyncProject(), "", SyncFlowOptions{})
+	m.inbound = map[string]fileChangeCount{
+		"feature-a": {files: 1, ok: true},
+		"leaf":      {files: 2, ok: true},
+	}
+	m.outbound = map[string]fileChangeCount{
+		"feature-a": {files: 8, ok: true},
+		"leaf":      {files: 9, ok: true},
+	}
+	m = m.refreshPicker()
+
+	byName := pickerByName(t, m)
+	if byName["leaf"].Title() != "leaf  2" {
+		t.Fatalf("downward badge: %q", byName["leaf"].Title())
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	flow := updated.(SyncFlowModel)
+	if flow.direction != sync.Upward {
+		t.Fatal("d should flip to upward")
+	}
+	view := flow.View()
+	if !strings.Contains(view, "sync: upward (child→parent)") || !strings.Contains(view, "d: show downward") {
+		t.Fatalf("upward picker help:\n%s", view)
+	}
+	byName = pickerByName(t, flow)
+	if byName["leaf"].Title() != "leaf  9" {
+		t.Fatalf("upward badge: %q", byName["leaf"].Title())
+	}
+
+	flow.fromBranch = "develop"
+	flow.edges = sync.EdgesBelow(flow.project.Tree, "develop", flow.direction)
+	flow.step = stepSyncEdgeConfirm
+	flow = flow.resetEdgeConfirm()
+	if flow.direction != sync.Upward {
+		t.Fatal("direction must stay upward after root is chosen")
+	}
+	cv := flow.View()
+	if !strings.Contains(cv, "Create MR leaf → feature-a?") {
+		t.Fatalf("expected upward first confirm:\n%s", cv)
+	}
+	if strings.Contains(cv, "d: show") {
+		t.Fatalf("confirm must not list d toggle:\n%s", cv)
+	}
+
+	fresh := newSyncFlowModel(testDeepSyncProject(), "", SyncFlowOptions{})
+	if fresh.direction != sync.Downward {
+		t.Fatal("new standalone model must start downward")
+	}
+}
+
+func pickerByName(t *testing.T, m SyncFlowModel) map[string]branchItem {
+	t.Helper()
+	byName := map[string]branchItem{}
+	for _, item := range m.branchList.Items() {
+		bi, ok := item.(branchItem)
+		if !ok {
+			t.Fatal("expected branchItem")
+		}
+		byName[bi.name] = bi
+	}
+	return byName
 }

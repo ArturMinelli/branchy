@@ -30,7 +30,8 @@ const (
 
 // SyncFlowOptions configures the sync TUI flow.
 type SyncFlowOptions struct {
-	Embedded bool
+	Embedded  bool
+	Direction sync.Direction
 }
 
 // SyncFlowModel is a multi-step Bubble Tea model for interactive sync.
@@ -47,7 +48,9 @@ type SyncFlowModel struct {
 	branchList  list.Model
 	confirm     ConfirmModel
 	loading     LoadingModel
+	direction   sync.Direction
 	inbound     map[string]fileChangeCount
+	outbound    map[string]fileChangeCount
 	cancelled   bool
 	finished    bool
 	flowWindow
@@ -73,9 +76,11 @@ func newSyncFlowModel(p *project.Project, fromBranch string, opts SyncFlowOption
 		project:    p,
 		opts:       opts,
 		fromBranch: fromBranch,
+		direction:  opts.Direction,
 	}
 	if p != nil {
 		m.inbound = loadInboundCounts(p.Path, p.Tree)
+		m.outbound = loadOutboundCounts(p.Path, p.Tree)
 	}
 
 	if fromBranch == "" {
@@ -86,7 +91,7 @@ func newSyncFlowModel(p *project.Project, fromBranch string, opts SyncFlowOption
 			return m
 		}
 		m.step = stepSyncPickRoot
-		m.branchList = newBranchListWithBadges(names, "Select root branch to sync from", inboundBadges(m.inbound))
+		m.branchList = newBranchListWithBadges(names, "Select root branch to sync from", fileChangeBadges(m.activeCounts()))
 		return m
 	}
 
@@ -94,10 +99,25 @@ func newSyncFlowModel(p *project.Project, fromBranch string, opts SyncFlowOption
 }
 
 func (m SyncFlowModel) applyInbound(counts map[string]fileChangeCount) SyncFlowModel {
-	m.inbound = counts
+	return m.applyFileCounts(counts, m.outbound)
+}
+
+func (m SyncFlowModel) applyFileCounts(in, out map[string]fileChangeCount) SyncFlowModel {
+	m.inbound = in
+	m.outbound = out
+	return m.refreshCountSurfaces()
+}
+
+func (m SyncFlowModel) activeCounts() map[string]fileChangeCount {
+	if m.direction == sync.Upward {
+		return m.outbound
+	}
+	return m.inbound
+}
+
+func (m SyncFlowModel) refreshCountSurfaces() SyncFlowModel {
 	if m.project != nil && m.step == stepSyncPickRoot {
-		title := "Select root branch to sync from"
-		m.branchList = newBranchListWithBadges(m.project.Tree.Names(), title, inboundBadges(m.inbound))
+		m = m.refreshPicker()
 	}
 	if m.step == stepSyncEdgeConfirm && len(m.edges) > 0 {
 		m = m.resetEdgeConfirm()
@@ -105,7 +125,20 @@ func (m SyncFlowModel) applyInbound(counts map[string]fileChangeCount) SyncFlowM
 	return m
 }
 
-func inboundBadges(counts map[string]fileChangeCount) map[string]string {
+func (m SyncFlowModel) refreshPicker() SyncFlowModel {
+	idx := m.branchList.Index()
+	m.branchList = newBranchListWithBadges(m.project.Tree.Names(), "Select root branch to sync from", fileChangeBadges(m.activeCounts()))
+	if m.width > 0 {
+		m.branchList.SetWidth(m.width)
+		m.branchList.SetHeight(m.height - 6)
+	}
+	if idx >= 0 {
+		m.branchList.Select(idx)
+	}
+	return m
+}
+
+func fileChangeBadges(counts map[string]fileChangeCount) map[string]string {
 	if counts == nil {
 		return nil
 	}
@@ -118,9 +151,13 @@ func inboundBadges(counts map[string]fileChangeCount) map[string]string {
 	return badges
 }
 
+func inboundBadges(counts map[string]fileChangeCount) map[string]string {
+	return fileChangeBadges(counts)
+}
+
 func (m SyncFlowModel) prepareSyncFrom(fromBranch string) SyncFlowModel {
 	m.fromBranch = fromBranch
-	edges := m.project.Tree.CollectEdges(fromBranch)
+	edges := sync.EdgesBelow(m.project.Tree, fromBranch, m.direction)
 	if len(edges) == 0 {
 		m.step = stepSyncEmpty
 		return m
@@ -140,16 +177,39 @@ func (m SyncFlowModel) prepareSyncFrom(fromBranch string) SyncFlowModel {
 
 func (m SyncFlowModel) resetEdgeConfirm() SyncFlowModel {
 	edge := m.currentEdge()
+	source, target := sync.Ends(edge, m.direction)
+	count := lookupInbound(m.activeCounts(), edge.Child)
 	m.confirm = NewConfirm(ConfirmOptions{
 		Context: []string{
-			fmt.Sprintf("Sync from %s", m.fromBranch),
-			formatInboundConfirm(edge.Child, lookupInbound(m.inbound, edge.Child)),
+			m.syncContextLine(),
+			formatFileChangeConfirm(target, count),
 		},
-		Question: fmt.Sprintf("Create MR %s → %s?", edge.Parent, edge.Child),
+		Question: fmt.Sprintf("Create MR %s → %s?", source, target),
 		Progress: fmt.Sprintf("Edge %d of %d", m.edgeIndex+1, len(m.edges)),
 		Width:    m.width,
 	})
 	return m
+}
+
+func (m SyncFlowModel) syncContextLine() string {
+	if m.direction == sync.Upward {
+		return fmt.Sprintf("Sync up to %s", m.fromBranch)
+	}
+	return fmt.Sprintf("Sync down from %s", m.fromBranch)
+}
+
+func syncPickerHelp(dir sync.Direction) string {
+	if dir == sync.Upward {
+		return "↑/↓: navigate  enter: select  d: show downward  esc: cancel  q: quit\nsync: upward (child→parent)"
+	}
+	return "↑/↓: navigate  enter: select  d: show upward  esc: cancel  q: quit\nsync: downward (parent→child)"
+}
+
+func syncDirection(d diffDirection) sync.Direction {
+	if d == diffOutbound {
+		return sync.Upward
+	}
+	return sync.Downward
 }
 
 func (m SyncFlowModel) resetBrowserConfirm() SyncFlowModel {
@@ -181,7 +241,10 @@ func (m SyncFlowModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil || m.project == nil || msg.projectID != m.project.ID {
 			return m, nil
 		}
-		return m.applyInbound(loadInboundCounts(m.project.Path, m.project.Tree)), nil
+		return m.applyFileCounts(
+			loadInboundCounts(m.project.Path, m.project.Tree),
+			loadOutboundCounts(m.project.Path, m.project.Tree),
+		), nil
 
 	case tea.WindowSizeMsg:
 		m.onResize(msg)
@@ -277,6 +340,9 @@ func (m SyncFlowModel) updatePickRoot(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 	}
+	if key.Matches(msg, syncKeys.Direction) {
+		return m.flipPickerDirection(), nil
+	}
 	if key.Matches(msg, flowKeys.Enter) {
 		item, ok := m.branchList.SelectedItem().(branchItem)
 		if !ok {
@@ -306,16 +372,18 @@ func (m SyncFlowModel) View() string {
 	case stepSyncPickRoot:
 		b.WriteString(m.branchList.View())
 		b.WriteString("\n")
-		b.WriteString(RenderHelp("↑/↓: navigate  enter: select  esc: cancel  q: quit"))
+		b.WriteString(RenderHelp(syncPickerHelp(m.direction)))
 	case stepSyncEdgeConfirm:
 		b.WriteString(m.confirm.View())
 		b.WriteString("\n")
 		b.WriteString(RenderHelp("esc: cancel remaining  q: quit"))
 	case stepSyncProcessing:
-		b.WriteString(fmt.Sprintf("Sync from %s\n\n", m.fromBranch))
+		b.WriteString(m.syncContextLine())
+		b.WriteString("\n\n")
 		b.WriteString(m.loading.View())
 	case stepSyncSummary:
-		b.WriteString(fmt.Sprintf("Sync from %s\n\n", m.fromBranch))
+		b.WriteString(m.syncContextLine())
+		b.WriteString("\n\n")
 		b.WriteString(m.renderResults())
 		b.WriteString("\n")
 		if len(sync.OpenableURLs(m.summary())) > 0 {
@@ -326,7 +394,8 @@ func (m SyncFlowModel) View() string {
 			b.WriteString(RenderHelp("enter/q: done"))
 		}
 	case stepSyncBrowser:
-		b.WriteString(fmt.Sprintf("Sync from %s\n\n", m.fromBranch))
+		b.WriteString(m.syncContextLine())
+		b.WriteString("\n\n")
 		b.WriteString(m.renderResults())
 		b.WriteString("\n")
 		for _, url := range sync.OpenableURLs(m.summary()) {
@@ -340,7 +409,8 @@ func (m SyncFlowModel) View() string {
 		}
 		b.WriteString(m.confirm.View())
 	case stepSyncBrowserLoading:
-		b.WriteString(fmt.Sprintf("Sync from %s\n\n", m.fromBranch))
+		b.WriteString(m.syncContextLine())
+		b.WriteString("\n\n")
 		b.WriteString(m.loading.View())
 	case stepSyncEmpty:
 		b.WriteString(warnStyle.Render(fmt.Sprintf("No child branches below %q.", m.fromBranch)))
@@ -366,7 +436,8 @@ func (m SyncFlowModel) View() string {
 func (m SyncFlowModel) renderResults() string {
 	var b strings.Builder
 	for _, r := range m.results {
-		line := fmt.Sprintf("%s → %s: %s", r.Parent, r.Child, r.Action)
+		source, target := r.Arrow()
+		line := fmt.Sprintf("%s → %s: %s", source, target, r.Action)
 		switch r.Action {
 		case mr.ActionCreated:
 			line = okStyle.Render(line)
@@ -375,7 +446,7 @@ func (m SyncFlowModel) renderResults() string {
 		default:
 			line = warnStyle.Render(line)
 			if r.Message != "" {
-				line = warnStyle.Render(fmt.Sprintf("%s → %s: %s (%s)", r.Parent, r.Child, r.Action, r.Message))
+				line = warnStyle.Render(fmt.Sprintf("%s → %s: %s (%s)", source, target, r.Action, r.Message))
 			}
 		}
 		b.WriteString(line)
@@ -389,19 +460,30 @@ func (m SyncFlowModel) renderResults() string {
 }
 
 type syncKeyMap struct {
-	Back  key.Binding
-	Enter key.Binding
-	Quit  key.Binding
-	Yes   key.Binding
-	No    key.Binding
+	Back      key.Binding
+	Enter     key.Binding
+	Quit      key.Binding
+	Yes       key.Binding
+	No        key.Binding
+	Direction key.Binding
 }
 
 var syncKeys = syncKeyMap{
-	Back:  key.NewBinding(key.WithKeys("esc", "b")),
-	Enter: key.NewBinding(key.WithKeys("enter")),
-	Quit:  key.NewBinding(key.WithKeys("q", "ctrl+c")),
-	Yes:   key.NewBinding(key.WithKeys("y")),
-	No:    key.NewBinding(key.WithKeys("n")),
+	Back:      key.NewBinding(key.WithKeys("esc", "b")),
+	Enter:     key.NewBinding(key.WithKeys("enter")),
+	Quit:      key.NewBinding(key.WithKeys("q", "ctrl+c")),
+	Yes:       key.NewBinding(key.WithKeys("y")),
+	No:        key.NewBinding(key.WithKeys("n")),
+	Direction: key.NewBinding(key.WithKeys("d")),
+}
+
+func (m SyncFlowModel) flipPickerDirection() SyncFlowModel {
+	if m.direction == sync.Upward {
+		m.direction = sync.Downward
+	} else {
+		m.direction = sync.Upward
+	}
+	return m.refreshPicker()
 }
 
 type edgeResultMsg struct {
@@ -430,15 +512,20 @@ func (m SyncFlowModel) updateEdgeConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case ConfirmYes:
 		m.step = stepSyncProcessing
 		edge := m.currentEdge()
+		source, target := sync.Ends(edge, m.direction)
 		m.loading = NewLoading(LoadingOptions{
-			Message:  LoadingMessage("Creating MR", fmt.Sprintf("%s → %s", edge.Parent, edge.Child)),
+			Message:  LoadingMessage("Creating MR", fmt.Sprintf("%s → %s", source, target)),
 			Progress: fmt.Sprintf("Edge %d of %d", m.edgeIndex+1, len(m.edges)),
 		})
-		return m, tea.Batch(m.loading.Init(), runEdgeCmd(m.project, edge))
+		return m, tea.Batch(m.loading.Init(), runEdgeCmd(m.project, edge, m.direction))
 	case ConfirmNo:
+		edge := m.currentEdge()
+		source, target := sync.Ends(edge, m.direction)
 		m.results = append(m.results, sync.Result{
-			Parent:  m.currentEdge().Parent,
-			Child:   m.currentEdge().Child,
+			Parent:  edge.Parent,
+			Child:   edge.Child,
+			Source:  source,
+			Target:  target,
 			Action:  mr.ActionSkipped,
 			Message: "skipped by user",
 		})
@@ -453,9 +540,9 @@ func (m SyncFlowModel) updateEdgeConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func runEdgeCmd(p *project.Project, edge tree.Edge) tea.Cmd {
+func runEdgeCmd(p *project.Project, edge tree.Edge, dir sync.Direction) tea.Cmd {
 	return func() tea.Msg {
-		return edgeResultMsg{result: sync.RunEdge(p, edge)}
+		return edgeResultMsg{result: sync.RunEdge(p, edge, dir)}
 	}
 }
 
