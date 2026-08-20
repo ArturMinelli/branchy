@@ -161,11 +161,8 @@ func TestDirectionChordsSetBadgesAndFooter(t *testing.T) {
 	m.treeView.setDirection(diffInbound)
 
 	view := stripANSI(m.View())
-	if !strings.Contains(view, "feature-a  5") {
+	if !strings.Contains(view, "feature-a  5 ↓") {
 		t.Fatalf("expected inbound badge:\n%s", view)
-	}
-	if !strings.Contains(view, "↓ feature-a") {
-		t.Fatalf("expected inbound arrow:\n%s", view)
 	}
 	if !strings.Contains(view, "counts: inbound (parent→child)") || !strings.Contains(view, "ctrl+↑: outbound") || !strings.Contains(view, "ctrl+↓: inbound") {
 		t.Fatalf("expected inbound footer:\n%s", view)
@@ -180,11 +177,8 @@ func TestDirectionChordsSetBadgesAndFooter(t *testing.T) {
 		t.Fatal("expected outbound direction after ctrl+up")
 	}
 	view = stripANSI(model.View())
-	if !strings.Contains(view, "feature-a  2") {
+	if !strings.Contains(view, "feature-a  2 ↑") {
 		t.Fatalf("expected outbound badge:\n%s", view)
-	}
-	if !strings.Contains(view, "↑ feature-a") {
-		t.Fatalf("expected outbound arrow:\n%s", view)
 	}
 	if !strings.Contains(view, "counts: outbound (child→parent)") || !strings.Contains(view, "ctrl+↑: outbound") {
 		t.Fatalf("expected outbound footer:\n%s", view)

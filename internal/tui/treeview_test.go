@@ -28,12 +28,6 @@ func TestFlattenTree(t *testing.T) {
 	if v.rows[1].connector != "└── " {
 		t.Fatalf("expected └── connector, got %q", v.rows[1].connector)
 	}
-	want := map[string]bool{"main": true, "release": true, "develop": true, "orphan": false}
-	for _, row := range v.rows {
-		if got := row.participating; got != want[row.name] {
-			t.Fatalf("%s participating=%v, want %v", row.name, got, want[row.name])
-		}
-	}
 }
 
 func TestTreeViewNavigation(t *testing.T) {
@@ -197,38 +191,25 @@ func TestTreeViewDirectionArrows(t *testing.T) {
 	if !strings.Contains(in, "▸") {
 		t.Fatalf("selected marker missing:\n%s", in)
 	}
-	for _, name := range []string{"main", "release", "develop"} {
-		if !strings.Contains(in, "↓ "+name) {
-			t.Fatalf("inbound arrow for %s:\n%s", name, in)
-		}
+	if !strings.Contains(in, "release  12 ↓") {
+		t.Fatalf("inbound arrow after count:\n%s", in)
 	}
-	if strings.Contains(in, "↓ orphan") || strings.Contains(in, "↑ orphan") {
-		t.Fatalf("childless root must not show an arrow:\n%s", in)
+	if strings.Contains(in, "↓ main") || strings.Contains(in, "↓ develop") || strings.Contains(in, "↓ orphan") {
+		t.Fatalf("rows without a visible count must not show an arrow:\n%s", in)
 	}
-	if !strings.Contains(in, "  orphan") {
-		t.Fatalf("childless root must be padded:\n%s", in)
-	}
-	if !strings.Contains(in, "release  12") {
-		t.Fatalf("count still shown with arrow:\n%s", in)
-	}
-	if !strings.Contains(in, "↓ develop") {
-		t.Fatalf("zero count must still show arrow:\n%s", in)
+	if strings.Contains(in, "develop  0") {
+		t.Fatalf("hidden zero must stay hidden:\n%s", in)
 	}
 
 	v.setDirection(diffOutbound)
 	out := stripANSI(v.View())
-	for _, name := range []string{"main", "release", "develop"} {
-		if !strings.Contains(out, "↑ "+name) {
-			t.Fatalf("outbound arrow for %s:\n%s", name, out)
-		}
-		if strings.Contains(out, "↓ "+name) {
-			t.Fatalf("inbound arrow remained on %s:\n%s", name, out)
-		}
+	if strings.Contains(out, "12 ↓") || strings.Contains(out, "release  12") {
+		t.Fatalf("outbound zero must hide count and arrow:\n%s", out)
 	}
-	if !strings.Contains(out, "↑ develop") || !strings.Contains(out, "develop  ?") {
-		t.Fatalf("unknown outbound must keep arrow:\n%s", out)
+	if !strings.Contains(out, "develop  ? ↑") {
+		t.Fatalf("unknown outbound must keep arrow after ?:\n%s", out)
 	}
-	if strings.Contains(out, "↑ orphan") {
-		t.Fatalf("childless root gained an arrow:\n%s", out)
+	if strings.Contains(out, "↑ main") || strings.Contains(out, "↑ orphan") {
+		t.Fatalf("rows without a count must not show an arrow:\n%s", out)
 	}
 }

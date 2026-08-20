@@ -21,10 +21,9 @@ var (
 
 // branchRow is one visible line in the flattened tree.
 type branchRow struct {
-	name          string
-	prefix        string
-	connector     string
-	participating bool
+	name      string
+	prefix    string
+	connector string
 }
 
 // BranchTreeView is an always-expanded interactive tree navigator.
@@ -68,14 +67,13 @@ func collectRows(doc *tree.Document, name, prefix string, isLast, isRoot bool, r
 		}
 	}
 
-	node, ok := doc.Branches[name]
-	hasChildren := ok && len(node.Children) > 0
 	*rows = append(*rows, branchRow{
-		name:          name,
-		prefix:        prefix,
-		connector:     connector,
-		participating: !isRoot || hasChildren,
+		name:      name,
+		prefix:    prefix,
+		connector: connector,
 	})
+
+	node, ok := doc.Branches[name]
 	if !ok {
 		return
 	}
@@ -154,25 +152,29 @@ func (v BranchTreeView) View() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func directionColumn(d diffDirection, participating bool) string {
-	if !participating {
-		return "  "
-	}
+func directionArrow(d diffDirection) string {
 	if d == diffOutbound {
-		return "↑ "
+		return "↑"
 	}
-	return "↓ "
+	return "↓"
+}
+
+func annotateCount(d diffDirection, badge string) string {
+	if badge == "" {
+		return ""
+	}
+	return badge + " " + directionArrow(d)
 }
 
 func (v BranchTreeView) renderRow(row branchRow, selected bool) string {
-	column := directionColumn(v.direction, row.participating)
-	label := column + row.name
 	badge := ""
 	if c, ok := v.activeCounts()[row.name]; ok {
 		badge = formatFileChangeBadge(c)
 	}
-	if badge != "" {
-		label += "  " + badge
+	cluster := annotateCount(v.direction, badge)
+	label := row.name
+	if cluster != "" {
+		label += "  " + cluster
 	}
 
 	var line string
@@ -180,13 +182,13 @@ func (v BranchTreeView) renderRow(row branchRow, selected bool) string {
 		marker := cursorStyle.Render("▸ ")
 		line = marker + selectedStyle.Render(row.prefix+row.connector+label)
 	} else {
-		prefix := connectorStyle.Render(row.prefix + row.connector + column)
+		prefix := connectorStyle.Render(row.prefix + row.connector)
 		name := branchNameStyle.Render(row.name)
 		line = prefix + name
-		if badge != "" {
-			styled := helpStyle.Render(badge)
+		if cluster != "" {
+			styled := helpStyle.Render(cluster)
 			if badge == "?" {
-				styled = warnStyle.Render(badge)
+				styled = warnStyle.Render(cluster)
 			}
 			line += "  " + styled
 		}
