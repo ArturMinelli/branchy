@@ -151,7 +151,7 @@ func TestRemoteUpdateFailureKeepsSnapshot(t *testing.T) {
 	}
 }
 
-func TestDirectionToggleFlipsBadgesAndFooter(t *testing.T) {
+func TestDirectionChordsSetBadgesAndFooter(t *testing.T) {
 	p := unlinkTestProject()
 	m := newModel([]*project.Project{p}, p)
 	m.treeView.setFileCounts(
@@ -164,27 +164,61 @@ func TestDirectionToggleFlipsBadgesAndFooter(t *testing.T) {
 	if !strings.Contains(view, "feature-a  5") {
 		t.Fatalf("expected inbound badge:\n%s", view)
 	}
-	if !strings.Contains(view, "counts: inbound (parent→child)") || !strings.Contains(view, "d: show outbound") {
+	if !strings.Contains(view, "↓ feature-a") {
+		t.Fatalf("expected inbound arrow:\n%s", view)
+	}
+	if !strings.Contains(view, "counts: inbound (parent→child)") || !strings.Contains(view, "ctrl+↑: outbound") || !strings.Contains(view, "ctrl+↓: inbound") {
 		t.Fatalf("expected inbound footer:\n%s", view)
 	}
+	if strings.Contains(view, "d: show") {
+		t.Fatalf("footer must not list d:\n%s", view)
+	}
 
-	updated, _ := m.updateTree(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	updated, _ := m.updateTree(tea.KeyMsg{Type: tea.KeyCtrlUp})
 	model := updated.(Model)
 	if model.diffDirection != diffOutbound {
-		t.Fatal("expected outbound direction after d")
+		t.Fatal("expected outbound direction after ctrl+up")
 	}
 	view = stripANSI(model.View())
 	if !strings.Contains(view, "feature-a  2") {
 		t.Fatalf("expected outbound badge:\n%s", view)
 	}
-	if !strings.Contains(view, "counts: outbound (child→parent)") || !strings.Contains(view, "d: show inbound") {
+	if !strings.Contains(view, "↑ feature-a") {
+		t.Fatalf("expected outbound arrow:\n%s", view)
+	}
+	if !strings.Contains(view, "counts: outbound (child→parent)") || !strings.Contains(view, "ctrl+↑: outbound") {
 		t.Fatalf("expected outbound footer:\n%s", view)
+	}
+
+	cursor := model.treeView.cursor
+	updated, _ = model.updateTree(tea.KeyMsg{Type: tea.KeyCtrlUp})
+	model = updated.(Model)
+	if model.diffDirection != diffOutbound {
+		t.Fatal("second ctrl+up must stay outbound")
+	}
+	if model.treeView.cursor != cursor {
+		t.Fatal("ctrl+up must not move the cursor")
+	}
+
+	updated, _ = model.updateTree(tea.KeyMsg{Type: tea.KeyCtrlDown})
+	model = updated.(Model)
+	if model.diffDirection != diffInbound {
+		t.Fatal("ctrl+down must set inbound")
 	}
 
 	updated, _ = model.updateTree(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	model = updated.(Model)
 	if model.diffDirection != diffInbound {
-		t.Fatal("expected inbound restored")
+		t.Fatal("d must not change direction")
+	}
+
+	updated, _ = model.updateTree(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(Model)
+	if model.diffDirection != diffInbound {
+		t.Fatal("plain down must not change direction")
+	}
+	if model.treeView.cursor == cursor {
+		t.Fatal("plain down must move the cursor")
 	}
 }
 
@@ -219,10 +253,10 @@ func TestDirectionSurvivesSyncReturnAndProjectSwitch(t *testing.T) {
 		}},
 	}
 	m := newModel([]*project.Project{p, other}, p)
-	updated, _ := m.updateTree(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	updated, _ := m.updateTree(tea.KeyMsg{Type: tea.KeyCtrlUp})
 	model := updated.(Model)
 	if model.diffDirection != diffOutbound {
-		t.Fatal("expected outbound after toggle")
+		t.Fatal("expected outbound after ctrl+up")
 	}
 
 	// Simulate embedded sync finishing without running SyncFlowModel.Update.
@@ -270,8 +304,8 @@ func TestSyncFollowsTreeOutbound(t *testing.T) {
 		t.Fatalf("ceiling should be develop, got %q", model.syncFlow.fromBranch)
 	}
 	view := stripANSI(model.View())
-	if strings.Contains(view, "d: show") || strings.Contains(view, "counts: outbound") {
-		t.Fatalf("embedded confirm must not show direction toggle:\n%s", view)
+	if strings.Contains(view, "d: show") || strings.Contains(view, "counts: outbound") || strings.Contains(view, "ctrl+↑") {
+		t.Fatalf("embedded confirm must not show direction controls:\n%s", view)
 	}
 }
 

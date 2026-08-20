@@ -48,11 +48,23 @@ func TestLoadOutboundCountsOmitsRoots(t *testing.T) {
 
 func TestTreeHelpFooter(t *testing.T) {
 	in := treeHelpFooter(diffInbound)
-	if !strings.Contains(in, "d: show outbound") || !strings.Contains(in, "counts: inbound (parent→child)") {
-		t.Fatalf("inbound footer:\n%s", in)
+	if !strings.Contains(in, "ctrl+↑: outbound") || !strings.Contains(in, "ctrl+↓: inbound") {
+		t.Fatalf("inbound chords:\n%s", in)
+	}
+	if !strings.Contains(in, "counts: inbound (parent→child)") {
+		t.Fatalf("inbound mode cue:\n%s", in)
+	}
+	if strings.Contains(in, "d: show") {
+		t.Fatalf("inbound footer must not list d:\n%s", in)
 	}
 	out := treeHelpFooter(diffOutbound)
-	if !strings.Contains(out, "d: show inbound") || !strings.Contains(out, "counts: outbound (child→parent)") {
-		t.Fatalf("outbound footer:\n%s", out)
+	if !strings.Contains(out, "ctrl+↑: outbound") || !strings.Contains(out, "ctrl+↓: inbound") {
+		t.Fatalf("outbound chords:\n%s", out)
+	}
+	if !strings.Contains(out, "counts: outbound (child→parent)") {
+		t.Fatalf("outbound mode cue:\n%s", out)
+	}
+	if strings.Contains(out, "d: show") {
+		t.Fatalf("outbound footer must not list d:\n%s", out)
 	}
 }

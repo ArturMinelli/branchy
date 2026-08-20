@@ -519,12 +519,15 @@ func TestSyncFlowStandalonePickerStartsDownward(t *testing.T) {
 		t.Fatalf("standalone must start downward, got %d", m.direction)
 	}
 	view := m.View()
-	if !strings.Contains(view, "sync: downward (parent→child)") || !strings.Contains(view, "d: show upward") {
+	if !strings.Contains(view, "sync: downward (parent→child)") || !strings.Contains(view, "ctrl+↑: outbound") || !strings.Contains(view, "ctrl+↓: inbound") {
 		t.Fatalf("picker help:\n%s", view)
+	}
+	if strings.Contains(view, "d: show") {
+		t.Fatalf("picker must not list d:\n%s", view)
 	}
 }
 
-func TestSyncFlowStandalonePickerToggle(t *testing.T) {
+func TestSyncFlowStandalonePickerChords(t *testing.T) {
 	m := newSyncFlowModel(testDeepSyncProject(), "", SyncFlowOptions{})
 	m.inbound = map[string]fileChangeCount{
 		"feature-a": {files: 1, ok: true},
@@ -540,19 +543,37 @@ func TestSyncFlowStandalonePickerToggle(t *testing.T) {
 	if byName["leaf"].Title() != "leaf  2" {
 		t.Fatalf("downward badge: %q", byName["leaf"].Title())
 	}
+	if strings.HasPrefix(byName["leaf"].Title(), "↓ ") || strings.HasPrefix(byName["leaf"].Title(), "↑ ") {
+		t.Fatalf("picker row must not use tree arrows: %q", byName["leaf"].Title())
+	}
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlUp})
 	flow := updated.(SyncFlowModel)
 	if flow.direction != sync.Upward {
-		t.Fatal("d should flip to upward")
+		t.Fatal("ctrl+up should set upward")
 	}
 	view := flow.View()
-	if !strings.Contains(view, "sync: upward (child→parent)") || !strings.Contains(view, "d: show downward") {
+	if !strings.Contains(view, "sync: upward (child→parent)") || !strings.Contains(view, "ctrl+↑: outbound") {
 		t.Fatalf("upward picker help:\n%s", view)
+	}
+	if strings.Contains(view, "d: show") {
+		t.Fatalf("picker must not list d:\n%s", view)
 	}
 	byName = pickerByName(t, flow)
 	if byName["leaf"].Title() != "leaf  9" {
 		t.Fatalf("upward badge: %q", byName["leaf"].Title())
+	}
+
+	updated, _ = flow.Update(tea.KeyMsg{Type: tea.KeyCtrlUp})
+	flow = updated.(SyncFlowModel)
+	if flow.direction != sync.Upward {
+		t.Fatal("second ctrl+up must stay upward")
+	}
+
+	updated, _ = flow.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	flow = updated.(SyncFlowModel)
+	if flow.direction != sync.Upward {
+		t.Fatal("d must not change picker direction")
 	}
 
 	flow.fromBranch = "develop"
@@ -566,8 +587,14 @@ func TestSyncFlowStandalonePickerToggle(t *testing.T) {
 	if !strings.Contains(cv, "Create MR leaf → feature-a?") {
 		t.Fatalf("expected upward first confirm:\n%s", cv)
 	}
-	if strings.Contains(cv, "d: show") {
-		t.Fatalf("confirm must not list d toggle:\n%s", cv)
+	if strings.Contains(cv, "d: show") || strings.Contains(cv, "ctrl+↑") {
+		t.Fatalf("confirm must not list direction chords:\n%s", cv)
+	}
+
+	updated, _ = flow.Update(tea.KeyMsg{Type: tea.KeyCtrlDown})
+	flow = updated.(SyncFlowModel)
+	if flow.direction != sync.Upward {
+		t.Fatal("confirm ctrl+down must not change direction")
 	}
 
 	fresh := newSyncFlowModel(testDeepSyncProject(), "", SyncFlowOptions{})

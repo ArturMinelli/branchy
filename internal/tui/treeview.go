@@ -21,9 +21,10 @@ var (
 
 // branchRow is one visible line in the flattened tree.
 type branchRow struct {
-	name      string
-	prefix    string
-	connector string
+	name          string
+	prefix        string
+	connector     string
+	participating bool
 }
 
 // BranchTreeView is an always-expanded interactive tree navigator.
@@ -67,13 +68,14 @@ func collectRows(doc *tree.Document, name, prefix string, isLast, isRoot bool, r
 		}
 	}
 
-	*rows = append(*rows, branchRow{
-		name:      name,
-		prefix:    prefix,
-		connector: connector,
-	})
-
 	node, ok := doc.Branches[name]
+	hasChildren := ok && len(node.Children) > 0
+	*rows = append(*rows, branchRow{
+		name:          name,
+		prefix:        prefix,
+		connector:     connector,
+		participating: !isRoot || hasChildren,
+	})
 	if !ok {
 		return
 	}
@@ -152,14 +154,25 @@ func (v BranchTreeView) View() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+func directionColumn(d diffDirection, participating bool) string {
+	if !participating {
+		return "  "
+	}
+	if d == diffOutbound {
+		return "↑ "
+	}
+	return "↓ "
+}
+
 func (v BranchTreeView) renderRow(row branchRow, selected bool) string {
-	label := row.name
+	column := directionColumn(v.direction, row.participating)
+	label := column + row.name
 	badge := ""
 	if c, ok := v.activeCounts()[row.name]; ok {
 		badge = formatFileChangeBadge(c)
 	}
 	if badge != "" {
-		label = row.name + "  " + badge
+		label += "  " + badge
 	}
 
 	var line string
@@ -167,7 +180,7 @@ func (v BranchTreeView) renderRow(row branchRow, selected bool) string {
 		marker := cursorStyle.Render("▸ ")
 		line = marker + selectedStyle.Render(row.prefix+row.connector+label)
 	} else {
-		prefix := connectorStyle.Render(row.prefix + row.connector)
+		prefix := connectorStyle.Render(row.prefix + row.connector + column)
 		name := branchNameStyle.Render(row.name)
 		line = prefix + name
 		if badge != "" {

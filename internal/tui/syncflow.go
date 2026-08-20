@@ -199,10 +199,11 @@ func (m SyncFlowModel) syncContextLine() string {
 }
 
 func syncPickerHelp(dir sync.Direction) string {
+	mode := "sync: downward (parent→child)"
 	if dir == sync.Upward {
-		return "↑/↓: navigate  enter: select  d: show downward  esc: cancel  q: quit\nsync: upward (child→parent)"
+		mode = "sync: upward (child→parent)"
 	}
-	return "↑/↓: navigate  enter: select  d: show upward  esc: cancel  q: quit\nsync: downward (parent→child)"
+	return "↑/↓: navigate  enter: select  " + directionChordHints() + "  esc: cancel  q: quit\n" + mode
 }
 
 func syncDirection(d diffDirection) sync.Direction {
@@ -340,8 +341,11 @@ func (m SyncFlowModel) updatePickRoot(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 	}
-	if key.Matches(msg, syncKeys.Direction) {
-		return m.flipPickerDirection(), nil
+	if key.Matches(msg, syncKeys.DirectionUp) {
+		return m.setPickerDirection(sync.Upward), nil
+	}
+	if key.Matches(msg, syncKeys.DirectionDown) {
+		return m.setPickerDirection(sync.Downward), nil
 	}
 	if key.Matches(msg, flowKeys.Enter) {
 		item, ok := m.branchList.SelectedItem().(branchItem)
@@ -460,29 +464,30 @@ func (m SyncFlowModel) renderResults() string {
 }
 
 type syncKeyMap struct {
-	Back      key.Binding
-	Enter     key.Binding
-	Quit      key.Binding
-	Yes       key.Binding
-	No        key.Binding
-	Direction key.Binding
+	Back          key.Binding
+	Enter         key.Binding
+	Quit          key.Binding
+	Yes           key.Binding
+	No            key.Binding
+	DirectionUp   key.Binding
+	DirectionDown key.Binding
 }
 
 var syncKeys = syncKeyMap{
-	Back:      key.NewBinding(key.WithKeys("esc", "b")),
-	Enter:     key.NewBinding(key.WithKeys("enter")),
-	Quit:      key.NewBinding(key.WithKeys("q", "ctrl+c")),
-	Yes:       key.NewBinding(key.WithKeys("y")),
-	No:        key.NewBinding(key.WithKeys("n")),
-	Direction: key.NewBinding(key.WithKeys("d")),
+	Back:          key.NewBinding(key.WithKeys("esc", "b")),
+	Enter:         key.NewBinding(key.WithKeys("enter")),
+	Quit:          key.NewBinding(key.WithKeys("q", "ctrl+c")),
+	Yes:           key.NewBinding(key.WithKeys("y")),
+	No:            key.NewBinding(key.WithKeys("n")),
+	DirectionUp:   key.NewBinding(key.WithKeys("ctrl+up")),
+	DirectionDown: key.NewBinding(key.WithKeys("ctrl+down")),
 }
 
-func (m SyncFlowModel) flipPickerDirection() SyncFlowModel {
-	if m.direction == sync.Upward {
-		m.direction = sync.Downward
-	} else {
-		m.direction = sync.Upward
+func (m SyncFlowModel) setPickerDirection(dir sync.Direction) SyncFlowModel {
+	if m.direction == dir {
+		return m
 	}
+	m.direction = dir
 	return m.refreshPicker()
 }
 

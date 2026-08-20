@@ -54,35 +54,37 @@ type Model struct {
 }
 
 type keyMap struct {
-	Up        key.Binding
-	Down      key.Binding
-	Enter     key.Binding
-	Back      key.Binding
-	Sync      key.Binding
-	Link      key.Binding
-	Unlink    key.Binding
-	MR        key.Binding
-	Direction key.Binding
-	Quit      key.Binding
-	Yes       key.Binding
-	No        key.Binding
-	Tab       key.Binding
+	Up            key.Binding
+	Down          key.Binding
+	Enter         key.Binding
+	Back          key.Binding
+	Sync          key.Binding
+	Link          key.Binding
+	Unlink        key.Binding
+	MR            key.Binding
+	DirectionUp   key.Binding
+	DirectionDown key.Binding
+	Quit          key.Binding
+	Yes           key.Binding
+	No            key.Binding
+	Tab           key.Binding
 }
 
 var keys = keyMap{
-	Up:        key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
-	Down:      key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
-	Enter:     key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select")),
-	Back:      key.NewBinding(key.WithKeys("esc", "b"), key.WithHelp("esc/b", "back")),
-	Sync:      key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sync")),
-	Link:      key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "link")),
-	Unlink:    key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "unlink")),
-	MR:        key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "mr")),
-	Direction: key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "direction")),
-	Quit:      key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
-	Yes:       key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "yes")),
-	No:        key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "no")),
-	Tab:       key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next field")),
+	Up:            key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
+	Down:          key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
+	Enter:         key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "select")),
+	Back:          key.NewBinding(key.WithKeys("esc", "b"), key.WithHelp("esc/b", "back")),
+	Sync:          key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "sync")),
+	Link:          key.NewBinding(key.WithKeys("l"), key.WithHelp("l", "link")),
+	Unlink:        key.NewBinding(key.WithKeys("u"), key.WithHelp("u", "unlink")),
+	MR:            key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "mr")),
+	DirectionUp:   key.NewBinding(key.WithKeys("ctrl+up"), key.WithHelp("ctrl+↑", "outbound")),
+	DirectionDown: key.NewBinding(key.WithKeys("ctrl+down"), key.WithHelp("ctrl+↓", "inbound")),
+	Quit:          key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+	Yes:           key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "yes")),
+	No:            key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "no")),
+	Tab:           key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next field")),
 }
 
 // Run starts the TUI for an optional pre-resolved project.
@@ -389,12 +391,13 @@ func (m Model) updateTree(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.errMsg = ""
 		return m, nil
 	}
-	if key.Matches(msg, keys.Direction) {
-		if m.diffDirection == diffInbound {
-			m.diffDirection = diffOutbound
-		} else {
-			m.diffDirection = diffInbound
-		}
+	if key.Matches(msg, keys.DirectionUp) {
+		m.diffDirection = diffOutbound
+		m.treeView.setDirection(m.diffDirection)
+		return m, nil
+	}
+	if key.Matches(msg, keys.DirectionDown) {
+		m.diffDirection = diffInbound
 		m.treeView.setDirection(m.diffDirection)
 		return m, nil
 	}

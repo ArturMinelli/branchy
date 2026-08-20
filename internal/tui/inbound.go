@@ -83,11 +83,14 @@ func formatInboundConfirm(child string, c fileChangeCount) string {
 	return formatFileChangeConfirm(child, c)
 }
 
+func directionChordHints() string {
+	return "ctrl+↑: outbound  ctrl+↓: inbound"
+}
+
 func treeHelpFooter(d diffDirection) string {
-	switch d {
-	case diffOutbound:
-		return "↑/↓: navigate  d: show inbound  s: sync  m: mr  l: link  u: unlink  esc: projects  q: quit\ncounts: outbound (child→parent)"
-	default:
-		return "↑/↓: navigate  d: show outbound  s: sync  m: mr  l: link  u: unlink  esc: projects  q: quit\ncounts: inbound (parent→child)"
+	mode := "counts: inbound (parent→child)"
+	if d == diffOutbound {
+		mode = "counts: outbound (child→parent)"
 	}
+	return "↑/↓: navigate  " + directionChordHints() + "  s: sync  m: mr  l: link  u: unlink  esc: projects  q: quit\n" + mode
 }
