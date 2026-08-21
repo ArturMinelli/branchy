@@ -81,8 +81,8 @@ func TestUpdateUnlinkConfirmRemovesSubtree(t *testing.T) {
 		treeView:     newBranchTreeView(p.Tree),
 	}
 
-	// SaveTree will fail without a real path; confirm still mutates in memory first.
-	// We test mutation by calling UnlinkSubtree path up to save failure handling.
+	// project.Unlink mutates in memory before SaveTree; without a real store path
+	// save may fail, but the in-memory tree is still updated.
 	updated, _ := m.updateUnlink(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
 	model := updated.(Model)
 	if model.screen != screenTree {

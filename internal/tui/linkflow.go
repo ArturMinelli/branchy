@@ -204,12 +204,7 @@ func (m LinkFlowModel) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if choice == ConfirmYes {
-		if err := m.project.Tree.Link(m.parent, m.child); err != nil {
-			m.errMsg = err.Error()
-			m.step = stepLinkError
-			return m, nil
-		}
-		if err := m.project.SaveTree(); err != nil {
+		if err := m.project.Link(m.parent, m.child); err != nil {
 			m.errMsg = err.Error()
 			m.step = stepLinkError
 			return m, nil

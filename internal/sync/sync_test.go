@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 
+	"branchy/internal/mr"
+	"branchy/internal/project"
 	"branchy/internal/tree"
 )
 
@@ -144,5 +146,54 @@ func TestResultArrowPrefersSourceTarget(t *testing.T) {
 	src, tgt = legacy.Arrow()
 	if src != "p" || tgt != "c" {
 		t.Fatalf("legacy fallback: got %s → %s", src, tgt)
+	}
+}
+
+func testSyncProject() *project.Project {
+	return &project.Project{
+		ID:   "test",
+		Path: "/tmp/test",
+		Tree: &tree.Document{Branches: map[string]tree.BranchNode{
+			"main":    {Children: []string{"develop"}},
+			"develop": {Children: []string{"feat"}},
+			"feat":    {},
+			"leaf":    {},
+		}},
+	}
+}
+
+func TestBeginUnknownFromBranch(t *testing.T) {
+	p := testSyncProject()
+	_, err := Begin(p, "missing", Downward)
+	if err == nil || err.Error() != `branch "missing" not in tree` {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestBeginEmptyEdgesNoAuth(t *testing.T) {
+	p := testSyncProject()
+	edges, err := Begin(p, "leaf", Downward)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if len(edges) != 0 {
+		t.Fatalf("expected no edges, got %d", len(edges))
+	}
+}
+
+func TestSkippedByUser(t *testing.T) {
+	edge := tree.Edge{Parent: "main", Child: "develop"}
+
+	down := SkippedByUser(edge, Downward)
+	if down.Action != mr.ActionSkipped || down.Message != "skipped by user" {
+		t.Fatalf("down: %+v", down)
+	}
+	if down.Source != "main" || down.Target != "develop" {
+		t.Fatalf("down ends: %s → %s", down.Source, down.Target)
+	}
+
+	up := SkippedByUser(edge, Upward)
+	if up.Source != "develop" || up.Target != "main" {
+		t.Fatalf("up ends: %s → %s", up.Source, up.Target)
 	}
 }

@@ -162,16 +162,14 @@ func (m UnlinkFlowModel) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if choice == ConfirmYes {
-		if err := m.project.Tree.UnlinkSubtree(m.target); err != nil {
+		parent, _ := m.project.Tree.ParentOf(m.target)
+		res, err := m.project.Unlink(parent, m.target)
+		if err != nil {
 			m.errMsg = err.Error()
 			m.step = stepUnlinkError
 			return m, nil
 		}
-		if err := m.project.SaveTree(); err != nil {
-			m.errMsg = err.Error()
-			m.step = stepUnlinkError
-			return m, nil
-		}
+		m.subtreeCount = res.Removed
 		m.step = stepUnlinkSuccess
 		return m, nil
 	}

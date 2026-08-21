@@ -8,7 +8,6 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"branchy/internal/gitlab"
 	"branchy/internal/mr"
 	"branchy/internal/project"
 	"branchy/internal/sync"
@@ -157,16 +156,14 @@ func inboundBadges(counts map[string]fileChangeCount) map[string]string {
 
 func (m SyncFlowModel) prepareSyncFrom(fromBranch string) SyncFlowModel {
 	m.fromBranch = fromBranch
-	edges := sync.EdgesBelow(m.project.Tree, fromBranch, m.direction)
-	if len(edges) == 0 {
-		m.step = stepSyncEmpty
+	edges, err := sync.Begin(m.project, fromBranch, m.direction)
+	if err != nil {
+		m.step = stepSyncError
+		m.errMsg = err.Error()
 		return m
 	}
-
-	client := &gitlab.Client{Dir: m.project.Path}
-	if err := client.AuthOK(); err != nil {
-		m.step = stepSyncError
-		m.errMsg = fmt.Sprintf("glab auth: %v (run: glab auth login)", err)
+	if len(edges) == 0 {
+		m.step = stepSyncEmpty
 		return m
 	}
 
@@ -524,16 +521,7 @@ func (m SyncFlowModel) updateEdgeConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		})
 		return m, tea.Batch(m.loading.Init(), runEdgeCmd(m.project, edge, m.direction))
 	case ConfirmNo:
-		edge := m.currentEdge()
-		source, target := sync.Ends(edge, m.direction)
-		m.results = append(m.results, sync.Result{
-			Parent:  edge.Parent,
-			Child:   edge.Child,
-			Source:  source,
-			Target:  target,
-			Action:  mr.ActionSkipped,
-			Message: "skipped by user",
-		})
+		m.results = append(m.results, sync.SkippedByUser(m.currentEdge(), m.direction))
 		m.edgeIndex++
 		if m.edgeIndex < len(m.edges) {
 			m.step = stepSyncEdgeConfirm

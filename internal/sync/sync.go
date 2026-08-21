@@ -73,6 +73,41 @@ type Options struct {
 
 var browserOpen = browser.Open
 
+// Begin resolves sync edges for an interactive run. GitLab auth runs only when
+// there is at least one edge to process.
+func Begin(p *project.Project, from string, dir Direction) ([]tree.Edge, error) {
+	if from == "" {
+		return nil, fmt.Errorf("from branch is required")
+	}
+	if _, ok := p.Tree.Branches[from]; !ok {
+		return nil, fmt.Errorf("branch %q not in tree", from)
+	}
+
+	edges := EdgesBelow(p.Tree, from, dir)
+	if len(edges) == 0 {
+		return edges, nil
+	}
+
+	client := &gitlab.Client{Dir: p.Path}
+	if err := client.AuthOK(); err != nil {
+		return nil, fmt.Errorf("glab auth: %w (run: glab auth login)", err)
+	}
+	return edges, nil
+}
+
+// SkippedByUser returns the sync result for a user-declined edge.
+func SkippedByUser(edge tree.Edge, dir Direction) Result {
+	source, target := Ends(edge, dir)
+	return Result{
+		Parent:  edge.Parent,
+		Child:   edge.Child,
+		Source:  source,
+		Target:  target,
+		Action:  mr.ActionSkipped,
+		Message: "skipped by user",
+	}
+}
+
 // Run creates MRs for each parent→child edge below FromBranch.
 func Run(p *project.Project, opts Options) (*Summary, error) {
 	if opts.FromBranch == "" {
@@ -175,9 +210,7 @@ func processEdge(p *project.Project, edge tree.Edge, opts Options) Result {
 			return res
 		}
 		if !ok {
-			res.Action = "skipped"
-			res.Message = "skipped by user"
-			return res
+			return SkippedByUser(edge, opts.Direction)
 		}
 	}
 

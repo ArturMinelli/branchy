@@ -422,11 +422,7 @@ func (m Model) updateLink(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if key.Matches(msg, keys.Enter) {
-		if err := m.current.Tree.Link(m.linkParent, m.linkChild); err != nil {
-			m.errMsg = err.Error()
-			return m, nil
-		}
-		if err := m.current.SaveTree(); err != nil {
+		if err := m.current.Link(m.linkParent, m.linkChild); err != nil {
 			m.errMsg = err.Error()
 			return m, nil
 		}
@@ -477,14 +473,8 @@ func (m Model) updateUnlink(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if choice == ConfirmYes {
-		if err := m.current.Tree.UnlinkSubtree(m.unlinkTarget); err != nil {
-			m.errMsg = err.Error()
-			m.screen = screenTree
-			m.unlinkTarget = ""
-			m.unlinkCount = 0
-			return m, nil
-		}
-		if err := m.current.SaveTree(); err != nil {
+		parent, _ := m.current.Tree.ParentOf(m.unlinkTarget)
+		if _, err := m.current.Unlink(parent, m.unlinkTarget); err != nil {
 			m.errMsg = err.Error()
 			m.screen = screenTree
 			m.unlinkTarget = ""

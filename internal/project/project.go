@@ -59,6 +59,56 @@ func loadFromEntry(id, path string) (*Project, error) {
 	return &Project{ID: id, Path: path, Tree: doc}, nil
 }
 
+// Link validates, adds parent→child, and persists the branch tree.
+func (p *Project) Link(parent, child string) error {
+	if err := p.Tree.Link(parent, child); err != nil {
+		return err
+	}
+	return p.SaveTree()
+}
+
+// UnlinkResult summarizes a successful unlink.
+type UnlinkResult struct {
+	Parent  string
+	Child   string
+	Removed int
+}
+
+// Unlink validates, removes the child subtree, and persists the branch tree.
+// When parent is empty, child must be a tree root (interactive root unlink).
+func (p *Project) Unlink(parent, child string) (*UnlinkResult, error) {
+	if child == "" {
+		return nil, fmt.Errorf("parent and child are required")
+	}
+	if parent != "" {
+		if parent == child {
+			return nil, fmt.Errorf("parent and child must differ")
+		}
+		if _, ok := p.Tree.Branches[child]; !ok {
+			return nil, fmt.Errorf("branch %q not in tree", child)
+		}
+		if !p.Tree.HasEdge(parent, child) {
+			return nil, fmt.Errorf("edge not found: %s → %s", parent, child)
+		}
+	} else {
+		if _, ok := p.Tree.Branches[child]; !ok {
+			return nil, fmt.Errorf("branch %q not in tree", child)
+		}
+		if _, hasParent := p.Tree.ParentOf(child); hasParent {
+			return nil, fmt.Errorf("branch %q is not a tree root", child)
+		}
+	}
+
+	removed := len(p.Tree.SubtreeNames(child))
+	if err := p.Tree.UnlinkSubtree(child); err != nil {
+		return nil, err
+	}
+	if err := p.SaveTree(); err != nil {
+		return nil, err
+	}
+	return &UnlinkResult{Parent: parent, Child: child, Removed: removed}, nil
+}
+
 // SaveTree persists the branch tree to the global store.
 func (p *Project) SaveTree() error {
 	treePath, err := config.TreePath(p.ID)
