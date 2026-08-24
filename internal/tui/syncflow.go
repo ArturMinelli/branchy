@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"branchy/internal/browser"
 	"branchy/internal/mr"
 	"branchy/internal/project"
 	"branchy/internal/sync"
@@ -541,7 +542,7 @@ func runEdgeCmd(p *project.Project, edge tree.Edge, dir sync.Direction) tea.Cmd 
 
 func runBrowserOpenCmd(urls []string) tea.Cmd {
 	return func() tea.Msg {
-		return browserOpenResultMsg{warn: sync.OpenURLs(urls)}
+		return browserOpenResultMsg{warn: browser.OpenURLs(urls)}
 	}
 }
 

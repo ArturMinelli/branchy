@@ -111,3 +111,13 @@ A developer using interactive sync or MR never depends on the screen constructin
 | Behavior | Outcome freeze |
 | Auth | Already owned by sync/MR (spec 011); this spec removes leftover UI GitLab sessions |
 | Types | Direction and action unification is spec 015 |
+
+## Decisions (Grilling Session 2026-08-24)
+
+| Topic | Decision |
+|-------|----------|
+| Plan target | 014 (013 already planned and implemented) |
+| Unused `RenderASCII` | Delete `internal/tree/render.go`; do not move it into TUI |
+| Display walk | Unstyled `Document.WalkDisplay`; treeview consumes it and paints glyphs |
+| Sequential open | Move `OpenURLs` to `internal/browser`; `OpenableURLs` stays on sync |
+| US3 GitLab | Verification grep only; no expected code change |

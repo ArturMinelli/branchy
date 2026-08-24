@@ -88,6 +88,54 @@ func (d *Document) Roots() []string {
 	return roots
 }
 
+// DisplayNode is one unstyled visit in a display walk of the stored hierarchy.
+type DisplayNode struct {
+	Name        string
+	Depth       int
+	IsRoot      bool
+	IsLast      bool
+	LastAtDepth []bool // ancestor isLast flags; len == Depth
+}
+
+// WalkDisplay returns a pre-order DFS of names for display consumers.
+// Children are sorted the same way as CollectEdges. The result has no glyphs.
+func (d *Document) WalkDisplay() []DisplayNode {
+	if d == nil {
+		return nil
+	}
+	roots := d.Roots()
+	if len(roots) == 0 {
+		return nil
+	}
+	out := make([]DisplayNode, 0, len(d.Branches))
+	for i, root := range roots {
+		d.walkDisplay(root, 0, true, i == len(roots)-1, nil, &out)
+	}
+	return out
+}
+
+func (d *Document) walkDisplay(name string, depth int, isRoot, isLast bool, lastAtDepth []bool, out *[]DisplayNode) {
+	*out = append(*out, DisplayNode{
+		Name:        name,
+		Depth:       depth,
+		IsRoot:      isRoot,
+		IsLast:      isLast,
+		LastAtDepth: append([]bool(nil), lastAtDepth...),
+	})
+	node, ok := d.Branches[name]
+	if !ok {
+		return
+	}
+	children := append([]string(nil), node.Children...)
+	sort.Strings(children)
+	childLast := make([]bool, len(lastAtDepth)+1)
+	copy(childLast, lastAtDepth)
+	childLast[len(lastAtDepth)] = isLast
+	for i, child := range children {
+		d.walkDisplay(child, depth+1, false, i == len(children)-1, childLast, out)
+	}
+}
+
 // CollectEdges returns all parent→child edges below root in DFS pre-order
 // (parent edge, then descendants). Used for downward sync.
 func (d *Document) CollectEdges(root string) []Edge {

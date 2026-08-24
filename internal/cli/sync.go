@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"branchy/internal/browser"
 	"branchy/internal/project"
 	"branchy/internal/sync"
 	"branchy/internal/tui"
@@ -122,7 +123,7 @@ func runSyncCLI(cmd *cobra.Command) error {
 		line = strings.TrimSpace(strings.ToLower(line))
 		if line == "y" || line == "yes" {
 			fmt.Printf("Opening %d MR(s) in browser...\n", len(urls))
-			if warn := sync.OpenURLs(urls); warn != "" {
+			if warn := browser.OpenURLs(urls); warn != "" {
 				fmt.Printf("Warning: %s\n", warn)
 			}
 		}

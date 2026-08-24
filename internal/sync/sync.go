@@ -2,10 +2,8 @@ package sync
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
-	"branchy/internal/browser"
 	"branchy/internal/gitlab"
 	"branchy/internal/mr"
 	"branchy/internal/project"
@@ -70,8 +68,6 @@ type Options struct {
 	Direction  Direction
 	Confirm    func(parent, child string) (bool, error)
 }
-
-var browserOpen = browser.Open
 
 // Begin resolves sync edges for an interactive run. GitLab auth runs only when
 // there is at least one edge to process.
@@ -179,23 +175,6 @@ func OpenableURLs(summary *Summary) []string {
 		}
 	}
 	return urls
-}
-
-// OpenURLs opens each URL sequentially in order. Returns a non-fatal warning if any open fails.
-func OpenURLs(urls []string) string {
-	if len(urls) == 0 {
-		return ""
-	}
-	var warnings []string
-	for i, url := range urls {
-		if i > 0 {
-			time.Sleep(200 * time.Millisecond)
-		}
-		if err := browserOpen(url); err != nil {
-			warnings = append(warnings, fmt.Sprintf("could not open %s: %v", url, err))
-		}
-	}
-	return strings.Join(warnings, "; ")
 }
 
 func processEdge(p *project.Project, edge tree.Edge, opts Options) Result {

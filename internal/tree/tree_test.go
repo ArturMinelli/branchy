@@ -229,3 +229,63 @@ func TestUnlinkSubtreeNotInTree(t *testing.T) {
 		t.Fatal("expected error for missing branch")
 	}
 }
+
+func TestWalkDisplayEmpty(t *testing.T) {
+	doc := &Document{Branches: map[string]BranchNode{}}
+	if got := doc.WalkDisplay(); len(got) != 0 {
+		t.Fatalf("expected empty walk, got %+v", got)
+	}
+}
+
+func TestWalkDisplayMembershipOrderAndSpine(t *testing.T) {
+	doc := &Document{Branches: map[string]BranchNode{
+		"main":    {Children: []string{"release"}},
+		"release": {Children: []string{"zeta", "alpha"}},
+		"alpha":   {},
+		"zeta":    {},
+		"orphan":  {},
+	}}
+
+	got := doc.WalkDisplay()
+	// Roots() sorts: main, orphan. Children sort: alpha before zeta.
+	want := []struct {
+		name   string
+		depth  int
+		isRoot bool
+		isLast bool
+	}{
+		{"main", 0, true, false},
+		{"release", 1, false, true},
+		{"alpha", 2, false, false},
+		{"zeta", 2, false, true},
+		{"orphan", 0, true, true},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("len: got %d want %d (%+v)", len(got), len(want), got)
+	}
+	names := map[string]bool{}
+	for i, n := range got {
+		w := want[i]
+		names[n.Name] = true
+		if n.Name != w.name || n.Depth != w.depth || n.IsRoot != w.isRoot || n.IsLast != w.isLast {
+			t.Fatalf("node %d: got %+v want %+v", i, n, w)
+		}
+		if len(n.LastAtDepth) != n.Depth {
+			t.Fatalf("%s: LastAtDepth len %d want %d", n.Name, len(n.LastAtDepth), n.Depth)
+		}
+	}
+	for name := range doc.Branches {
+		if !names[name] {
+			t.Fatalf("missing %s in walk", name)
+		}
+	}
+
+	// release is the only child of main; main is not the last root.
+	if !got[1].IsLast || got[1].LastAtDepth[0] {
+		t.Fatalf("release spine: %+v", got[1])
+	}
+	// alpha's parent (release) is last among main's children; skip root flag at [0].
+	if got[2].LastAtDepth[1] != true || got[2].IsLast {
+		t.Fatalf("alpha spine: %+v", got[2])
+	}
+}

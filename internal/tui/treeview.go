@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -49,51 +48,33 @@ func flattenTree(doc *tree.Document) []branchRow {
 	if doc == nil {
 		return nil
 	}
-	roots := doc.Roots()
-	rows := make([]branchRow, 0, len(doc.Branches))
-	for i, root := range roots {
-		collectRows(doc, root, "", i == len(roots)-1, true, &rows)
+	nodes := doc.WalkDisplay()
+	rows := make([]branchRow, 0, len(nodes))
+	for _, n := range nodes {
+		connector := ""
+		if !n.IsRoot {
+			if n.IsLast {
+				connector = "└── "
+			} else {
+				connector = "├── "
+			}
+		}
+		var prefix string
+		// Skip depth 0: roots do not contribute spine glyphs.
+		for i := 1; i < len(n.LastAtDepth); i++ {
+			if n.LastAtDepth[i] {
+				prefix += "    "
+			} else {
+				prefix += "│   "
+			}
+		}
+		rows = append(rows, branchRow{
+			name:      n.Name,
+			prefix:    prefix,
+			connector: connector,
+		})
 	}
 	return rows
-}
-
-func collectRows(doc *tree.Document, name, prefix string, isLast, isRoot bool, rows *[]branchRow) {
-	connector := ""
-	if !isRoot {
-		if isLast {
-			connector = "└── "
-		} else {
-			connector = "├── "
-		}
-	}
-
-	*rows = append(*rows, branchRow{
-		name:      name,
-		prefix:    prefix,
-		connector: connector,
-	})
-
-	node, ok := doc.Branches[name]
-	if !ok {
-		return
-	}
-
-	children := append([]string(nil), node.Children...)
-	sort.Strings(children)
-
-	var childPrefix string
-	switch {
-	case isRoot:
-		childPrefix = ""
-	case isLast:
-		childPrefix = prefix + "    "
-	default:
-		childPrefix = prefix + "│   "
-	}
-
-	for i, child := range children {
-		collectRows(doc, child, childPrefix, i == len(children)-1, false, rows)
-	}
 }
 
 func (v *BranchTreeView) setFileCounts(inbound, outbound map[string]fileChangeCount) {
