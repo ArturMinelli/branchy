@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -24,6 +25,21 @@ func unlinkTestProject() *project.Project {
 	}
 }
 
+func persistableProject(t *testing.T, doc *tree.Document) *project.Project {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	p := &project.Project{
+		ID:   "test",
+		Path: filepath.Join(home, "repo"),
+		Tree: doc,
+	}
+	if err := p.SaveTree(); err != nil {
+		t.Fatalf("SaveTree: %v", err)
+	}
+	return p
+}
+
 func TestUpdateTreeUnlinkOpensConfirm(t *testing.T) {
 	p := unlinkTestProject()
 	m := newModel([]*project.Project{p}, p)
@@ -36,32 +52,34 @@ func TestUpdateTreeUnlinkOpensConfirm(t *testing.T) {
 
 	updated, _ := m.updateTree(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
 	model := updated.(Model)
-	if model.screen != screenUnlinkConfirm {
-		t.Fatalf("expected screenUnlinkConfirm, got %d", model.screen)
+	if model.screen != screenUnlink {
+		t.Fatalf("expected screenUnlink, got %d", model.screen)
 	}
-	if model.unlinkTarget != "feature-a" {
-		t.Fatalf("expected unlink target feature-a, got %q", model.unlinkTarget)
+	if model.unlinkFlow.step != stepUnlinkConfirm {
+		t.Fatalf("expected stepUnlinkConfirm, got %d", model.unlinkFlow.step)
 	}
-	if model.unlinkCount != 2 {
-		t.Fatalf("expected unlink count 2, got %d", model.unlinkCount)
+	if model.unlinkFlow.target != "feature-a" {
+		t.Fatalf("expected unlink target feature-a, got %q", model.unlinkFlow.target)
+	}
+	if model.unlinkFlow.subtreeCount != 2 {
+		t.Fatalf("expected unlink count 2, got %d", model.unlinkFlow.subtreeCount)
 	}
 	view := model.View()
 	if strings.Contains(view, "[y/N]") {
 		t.Fatal("embedded unlink confirm must not contain [y/N]")
 	}
+	if strings.Contains(view, "Link branch") {
+		t.Fatal("view must not be the old inline editor")
+	}
 }
 
 func TestUpdateUnlinkCancel(t *testing.T) {
 	p := unlinkTestProject()
-	m := Model{
-		screen:       screenUnlinkConfirm,
-		current:      p,
-		unlinkTarget: "feature-a",
-		unlinkCount:  2,
-		treeView:     newBranchTreeView(p.Tree),
-	}
+	m := newModel([]*project.Project{p}, p)
+	m.screen = screenUnlink
+	m.unlinkFlow = newUnlinkFlowModel(p, UnlinkFlowOptions{Embedded: true, PrefillTarget: "feature-a"})
 
-	updated, _ := m.updateUnlink(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	model := updated.(Model)
 	if model.screen != screenTree {
 		t.Fatalf("expected screenTree after cancel, got %d", model.screen)
@@ -72,19 +90,26 @@ func TestUpdateUnlinkCancel(t *testing.T) {
 }
 
 func TestUpdateUnlinkConfirmRemovesSubtree(t *testing.T) {
-	p := unlinkTestProject()
-	m := Model{
-		screen:       screenUnlinkConfirm,
-		current:      p,
-		unlinkTarget: "feature-a",
-		unlinkCount:  2,
-		treeView:     newBranchTreeView(p.Tree),
+	p := persistableProject(t, &tree.Document{Branches: map[string]tree.BranchNode{
+		"develop":   {Children: []string{"feature-a"}},
+		"feature-a": {Children: []string{"feature-b"}},
+		"feature-b": {},
+	}})
+	m := newModel([]*project.Project{p}, p)
+	m.screen = screenUnlink
+	m.unlinkFlow = newUnlinkFlowModel(p, UnlinkFlowOptions{Embedded: true, PrefillTarget: "feature-a"})
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	model := updated.(Model)
+	if model.screen != screenUnlink {
+		t.Fatalf("expected stay on unlink success step, got %d", model.screen)
+	}
+	if model.unlinkFlow.step != stepUnlinkSuccess {
+		t.Fatalf("expected stepUnlinkSuccess, got %d", model.unlinkFlow.step)
 	}
 
-	// project.Unlink mutates in memory before SaveTree; without a real store path
-	// save may fail, but the in-memory tree is still updated.
-	updated, _ := m.updateUnlink(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
-	model := updated.(Model)
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
 	if model.screen != screenTree {
 		t.Fatalf("expected return to screenTree, got %d", model.screen)
 	}
@@ -93,6 +118,89 @@ func TestUpdateUnlinkConfirmRemovesSubtree(t *testing.T) {
 	}
 	if _, ok := model.current.Tree.Branches["feature-b"]; ok {
 		t.Fatal("feature-b should be removed after confirm")
+	}
+}
+
+func TestUpdateTreeLinkOpensChildStep(t *testing.T) {
+	p := unlinkTestProject()
+	m := newModel([]*project.Project{p}, p)
+	for i, row := range m.treeView.rows {
+		if row.name == "feature-a" {
+			m.treeView.cursor = i
+			break
+		}
+	}
+
+	updated, _ := m.updateTree(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	model := updated.(Model)
+	if model.screen != screenLink {
+		t.Fatalf("expected screenLink, got %d", model.screen)
+	}
+	if model.linkFlow.step != stepLinkChild {
+		t.Fatalf("expected stepLinkChild, got %d", model.linkFlow.step)
+	}
+	if model.linkFlow.parent != "feature-a" {
+		t.Fatalf("expected parent feature-a, got %q", model.linkFlow.parent)
+	}
+	view := stripANSI(model.View())
+	if strings.Contains(view, "Link branch") || strings.Contains(view, "tab: switch field") {
+		t.Fatalf("must not show the old two-field editor:\n%s", view)
+	}
+	if !strings.Contains(view, "Parent: feature-a") {
+		t.Fatalf("expected prefilled parent:\n%s", view)
+	}
+}
+
+func TestUpdateLinkCancelLeavesTree(t *testing.T) {
+	p := unlinkTestProject()
+	m := newModel([]*project.Project{p}, p)
+	m.screen = screenLink
+	m.linkFlow = newLinkFlowModel(p, LinkFlowOptions{Embedded: true, PrefillParent: "develop"})
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model := updated.(Model)
+	if model.screen != screenLink {
+		t.Fatalf("esc from child should open picker, got screen %d", model.screen)
+	}
+	if model.linkFlow.step != stepLinkParent {
+		t.Fatalf("expected parent picker, got %d", model.linkFlow.step)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = updated.(Model)
+	if model.screen != screenTree {
+		t.Fatalf("expected screenTree after picker cancel, got %d", model.screen)
+	}
+	if len(model.current.Tree.Branches) != 3 {
+		t.Fatalf("expected tree unchanged, got %d branches", len(model.current.Tree.Branches))
+	}
+}
+
+func TestUpdateLinkSuccessRefreshesTree(t *testing.T) {
+	p := persistableProject(t, &tree.Document{Branches: map[string]tree.BranchNode{
+		"develop":   {Children: []string{"feature-a"}},
+		"feature-a": {},
+	}})
+	m := newModel([]*project.Project{p}, p)
+	m.screen = screenLink
+	m.linkFlow = newLinkFlowModel(p, LinkFlowOptions{Embedded: true, PrefillParent: "develop"})
+	m.linkFlow.child = "feat"
+	m.linkFlow.step = stepLinkConfirm
+	m.linkFlow.confirm = NewConfirm(ConfirmOptions{Question: "Link develop → feat?", Width: 80})
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+	model := updated.(Model)
+	if model.linkFlow.step != stepLinkSuccess {
+		t.Fatalf("expected stepLinkSuccess, got %d", model.linkFlow.step)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(Model)
+	if model.screen != screenTree {
+		t.Fatalf("expected screenTree after done, got %d", model.screen)
+	}
+	if _, ok := model.current.Tree.Branches["feat"]; !ok {
+		t.Fatal("expected feat in tree after link")
 	}
 }
 

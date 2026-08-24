@@ -21,9 +21,16 @@ const (
 	stepLinkError
 )
 
+// LinkFlowOptions configures the link TUI flow.
+type LinkFlowOptions struct {
+	Embedded      bool
+	PrefillParent string
+}
+
 // LinkFlowModel is a multi-step Bubble Tea model for interactive link.
 type LinkFlowModel struct {
 	project    *project.Project
+	opts       LinkFlowOptions
 	step       linkStep
 	parent     string
 	child      string
@@ -35,20 +42,37 @@ type LinkFlowModel struct {
 	flowWindow
 }
 
+// Cancelled reports whether the user cancelled the flow.
+func (m LinkFlowModel) Cancelled() bool { return m.cancelled }
+
+// Finished reports whether the flow completed.
+func (m LinkFlowModel) Finished() bool { return m.finished }
+
 // RunLink starts a standalone link TUI for the given project.
 func RunLink(p *project.Project) error {
-	m := newLinkFlowModel(p)
+	opts := LinkFlowOptions{Embedded: false}
+	m := newLinkFlowModel(p, opts)
 	prog := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := prog.Run()
 	return err
 }
 
-func newLinkFlowModel(p *project.Project) LinkFlowModel {
+func newLinkFlowModel(p *project.Project, opts LinkFlowOptions) LinkFlowModel {
 	names := p.Tree.Names()
-	m := LinkFlowModel{project: p}
+	m := LinkFlowModel{project: p, opts: opts}
 	if len(names) == 0 {
 		m.step = stepLinkError
 		m.errMsg = "branch tree is empty"
+		return m
+	}
+	if opts.PrefillParent != "" {
+		if _, ok := p.Tree.Branches[opts.PrefillParent]; !ok {
+			m.step = stepLinkError
+			m.errMsg = fmt.Sprintf("branch %q not in tree", opts.PrefillParent)
+			return m
+		}
+		m.parent = opts.PrefillParent
+		m.step = stepLinkChild
 		return m
 	}
 	m.step = stepLinkParent
@@ -69,8 +93,7 @@ func (m LinkFlowModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.tooSmall {
 			if keyMatchesQuit(msg) {
-				m.finished = true
-				return m, tea.Quit
+				return m.finish()
 			}
 			return m, nil
 		}
@@ -84,8 +107,7 @@ func (m LinkFlowModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateConfirm(msg)
 		case stepLinkSuccess, stepLinkError:
 			if keyMatchesDone(msg) {
-				m.finished = true
-				return m, tea.Quit
+				return m.finish()
 			}
 		}
 	}
@@ -135,15 +157,8 @@ func (m LinkFlowModel) View() string {
 }
 
 func (m LinkFlowModel) updateParentPicker(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if keyMatchesQuit(msg) {
-		m.cancelled = true
-		m.finished = true
-		return m, tea.Quit
-	}
-	if keyMatchesBack(msg) {
-		m.cancelled = true
-		m.finished = true
-		return m, tea.Quit
+	if keyMatchesQuit(msg) || keyMatchesBack(msg) {
+		return m.cancelOrQuit()
 	}
 	if keyMatchesEnter(msg) {
 		item, ok := m.branchList.SelectedItem().(branchItem)
@@ -168,9 +183,7 @@ func (m LinkFlowModel) updateChildInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if keyMatchesQuit(msg) {
-		m.cancelled = true
-		m.finished = true
-		return m, tea.Quit
+		return m.cancelOrQuit()
 	}
 	if keyMatchesEnter(msg) {
 		if strings.TrimSpace(m.child) == "" {
@@ -199,9 +212,7 @@ func (m LinkFlowModel) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var choice ConfirmChoice
 	m.confirm, choice = m.confirm.Update(msg)
 	if choice == ConfirmNo {
-		m.cancelled = true
-		m.finished = true
-		return m, tea.Quit
+		return m.cancelOrQuit()
 	}
 	if choice == ConfirmYes {
 		if err := m.project.Link(m.parent, m.child); err != nil {
@@ -213,6 +224,23 @@ func (m LinkFlowModel) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	return m, nil
+}
+
+func (m LinkFlowModel) cancelOrQuit() (tea.Model, tea.Cmd) {
+	m.cancelled = true
+	m.finished = true
+	if m.opts.Embedded {
+		return m, nil
+	}
+	return m, tea.Quit
+}
+
+func (m LinkFlowModel) finish() (tea.Model, tea.Cmd) {
+	m.finished = true
+	if m.opts.Embedded {
+		return m, nil
+	}
+	return m, tea.Quit
 }
 
 func keyMatchesQuit(msg tea.KeyMsg) bool {

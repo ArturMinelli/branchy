@@ -22,14 +22,14 @@ func testLinkProject() *project.Project {
 }
 
 func TestLinkFlowStartsAtParentPicker(t *testing.T) {
-	m := newLinkFlowModel(testLinkProject())
+	m := newLinkFlowModel(testLinkProject(), LinkFlowOptions{})
 	if m.step != stepLinkParent {
 		t.Fatalf("expected stepLinkParent, got %d", m.step)
 	}
 }
 
 func TestLinkFlowParentToChild(t *testing.T) {
-	m := newLinkFlowModel(testLinkProject())
+	m := newLinkFlowModel(testLinkProject(), LinkFlowOptions{})
 	m.branchList.Select(0)
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -43,7 +43,7 @@ func TestLinkFlowParentToChild(t *testing.T) {
 }
 
 func TestLinkFlowConfirmViewUsesPanel(t *testing.T) {
-	m := newLinkFlowModel(testLinkProject())
+	m := newLinkFlowModel(testLinkProject(), LinkFlowOptions{})
 	m.parent = "main"
 	m.child = "feature"
 	m.step = stepLinkConfirm
@@ -55,7 +55,7 @@ func TestLinkFlowConfirmViewUsesPanel(t *testing.T) {
 }
 
 func TestLinkFlowConfirmCancel(t *testing.T) {
-	m := newLinkFlowModel(testLinkProject())
+	m := newLinkFlowModel(testLinkProject(), LinkFlowOptions{})
 	m.parent = "main"
 	m.child = "feature"
 	m.step = stepLinkConfirm
@@ -68,5 +68,54 @@ func TestLinkFlowConfirmCancel(t *testing.T) {
 	}
 	if cmd == nil {
 		t.Fatal("expected quit command")
+	}
+}
+
+func TestLinkFlowPrefillStartsAtChild(t *testing.T) {
+	m := newLinkFlowModel(testLinkProject(), LinkFlowOptions{PrefillParent: "develop"})
+	if m.step != stepLinkChild {
+		t.Fatalf("expected stepLinkChild, got %d", m.step)
+	}
+	if m.parent != "develop" {
+		t.Fatalf("expected parent develop, got %q", m.parent)
+	}
+}
+
+func TestLinkFlowEscFromChildOpensPicker(t *testing.T) {
+	m := newLinkFlowModel(testLinkProject(), LinkFlowOptions{})
+	m.step = stepLinkChild
+	m.parent = "main"
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	flow := updated.(LinkFlowModel)
+	if flow.step != stepLinkParent {
+		t.Fatalf("expected stepLinkParent, got %d", flow.step)
+	}
+	if flow.finished || flow.cancelled {
+		t.Fatal("esc from child must not leave the flow")
+	}
+}
+
+func TestLinkFlowPrefillEscOpensPicker(t *testing.T) {
+	m := newLinkFlowModel(testLinkProject(), LinkFlowOptions{PrefillParent: "main"})
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	flow := updated.(LinkFlowModel)
+	if flow.step != stepLinkParent {
+		t.Fatalf("expected parent picker after esc, got %d", flow.step)
+	}
+}
+
+func TestLinkFlowCancelEmbedded(t *testing.T) {
+	m := newLinkFlowModel(testLinkProject(), LinkFlowOptions{Embedded: true})
+	m.step = stepLinkConfirm
+	m.confirm = NewConfirm(ConfirmOptions{Question: "Link main → feature?", Width: 80})
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	flow := updated.(LinkFlowModel)
+	if !flow.cancelled {
+		t.Fatal("expected cancelled")
+	}
+	if cmd != nil {
+		t.Fatal("embedded cancel should not quit program")
 	}
 }

@@ -114,3 +114,15 @@ A developer pressing `s` or `m` still gets the existing embedded sync and MR flo
 | Freeze vs embed | Freeze outcomes; main-tree link/unlink may use standalone wizard screens |
 | TUI scope | Embed link/unlink only; do not split the main app file or sync/MR flows |
 | Operations | Still spec 011; this spec only removes duplicate interactive paths |
+
+## Decisions (Grilling Session 2026-08-24)
+
+| Topic | Decision |
+|-------|----------|
+| Plan this spec | 013 (012 already planned and implemented) |
+| Embedded link start | Prefill parent from tree selection and skip the picker; start at child name. No selection → full picker |
+| Embedded unlink start | Skip picker; open the dedicated confirm for the selected branch. Empty selection → do not launch |
+| After persist | Show wizard success/error step, then return to the refreshed tree (not an immediate jump on Yes) |
+| Esc from prefilled child | Open the parent picker (user can still change parent); esc on the picker returns to the tree |
+| Tests (tasks) | With implementation, no TDD-first; keep tests in existing `linkflow_test.go` / `unlinkflow_test.go` / `app_test.go` |
+| MVP (tasks) | US1 + US2 together — do not ship with inline unlink still present |

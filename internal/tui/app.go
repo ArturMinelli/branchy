@@ -17,7 +17,7 @@ const (
 	screenTree
 	screenSync
 	screenLink
-	screenUnlinkConfirm
+	screenUnlink
 	screenMR
 	screenDone
 )
@@ -42,12 +42,8 @@ type Model struct {
 	current       *project.Project
 	diffDirection diffDirection
 	syncFlow      SyncFlowModel
-	linkParent    string
-	linkChild     string
-	linkInput     int
-	unlinkTarget  string
-	unlinkCount   int
-	unlinkConfirm ConfirmModel
+	linkFlow      LinkFlowModel
+	unlinkFlow    UnlinkFlowModel
 	mrFlow        MRFlowModel
 	errMsg        string
 	quitting      bool
@@ -65,9 +61,6 @@ type keyMap struct {
 	DirectionUp   key.Binding
 	DirectionDown key.Binding
 	Quit          key.Binding
-	Yes           key.Binding
-	No            key.Binding
-	Tab           key.Binding
 }
 
 var keys = keyMap{
@@ -82,9 +75,6 @@ var keys = keyMap{
 	DirectionUp:   key.NewBinding(key.WithKeys("ctrl+up"), key.WithHelp("ctrl+↑", "outbound")),
 	DirectionDown: key.NewBinding(key.WithKeys("ctrl+down"), key.WithHelp("ctrl+↓", "inbound")),
 	Quit:          key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
-	Yes:           key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "yes")),
-	No:            key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "no")),
-	Tab:           key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "next field")),
 }
 
 // Run starts the TUI for an optional pre-resolved project.
@@ -182,6 +172,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 	}
+	if m.screen == screenLink {
+		var cmd tea.Cmd
+		var linkModel tea.Model
+		linkModel, cmd = m.linkFlow.Update(msg)
+		m.linkFlow = linkModel.(LinkFlowModel)
+		if m.linkFlow.finished {
+			return m.finishEmbeddedLink()
+		}
+		return m, cmd
+	}
+	if m.screen == screenUnlink {
+		var cmd tea.Cmd
+		var unlinkModel tea.Model
+		unlinkModel, cmd = m.unlinkFlow.Update(msg)
+		m.unlinkFlow = unlinkModel.(UnlinkFlowModel)
+		if m.unlinkFlow.finished {
+			return m.finishEmbeddedUnlink()
+		}
+		return m, cmd
+	}
 
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -202,10 +212,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateProjectPicker(msg)
 		case screenTree:
 			return m.updateTree(msg)
-		case screenLink:
-			return m.updateLink(msg)
-		case screenUnlinkConfirm:
-			return m.updateUnlink(msg)
 		case screenDone:
 			if key.Matches(msg, keys.Quit) || key.Matches(msg, keys.Enter) {
 				return m, tea.Quit
@@ -232,6 +238,12 @@ func (m Model) View() string {
 	if m.screen == screenSync {
 		return m.syncFlow.View()
 	}
+	if m.screen == screenLink {
+		return m.linkFlow.View()
+	}
+	if m.screen == screenUnlink {
+		return m.unlinkFlow.View()
+	}
 
 	var b strings.Builder
 	b.WriteString(RenderTitle("branchy"))
@@ -255,20 +267,6 @@ func (m Model) View() string {
 			}
 			b.WriteString(RenderHelp(line))
 		}
-	case screenUnlinkConfirm:
-		b.WriteString(m.unlinkConfirm.View())
-	case screenLink:
-		b.WriteString("Link branch\n\n")
-		parentMark, childMark := " ", " "
-		if m.linkInput == 0 {
-			parentMark = "▸"
-		} else {
-			childMark = "▸"
-		}
-		b.WriteString(fmt.Sprintf("%s parent: %s\n", parentMark, m.linkParent))
-		b.WriteString(fmt.Sprintf("%s child:  %s\n", childMark, m.linkChild))
-		b.WriteString("\n")
-		b.WriteString(RenderHelp("type name  tab: switch field  enter: save  esc: cancel"))
 	case screenDone:
 		if m.errMsg != "" {
 			b.WriteString(errStyle.Render(m.errMsg))
@@ -342,38 +340,28 @@ func (m Model) updateTree(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if key.Matches(msg, keys.Link) {
-		m.linkParent = m.treeView.selectedName()
-		m.linkChild = ""
-		m.linkInput = 1
-		if m.linkParent == "" {
-			m.linkInput = 0
-		}
+		m.linkFlow = newLinkFlowModel(m.current, LinkFlowOptions{
+			Embedded:      true,
+			PrefillParent: m.treeView.selectedName(),
+		})
+		m.sizeLinkFlow()
 		m.screen = screenLink
 		m.errMsg = ""
-		return m, nil
+		return m, m.linkFlow.Init()
 	}
 	if key.Matches(msg, keys.Unlink) {
 		name := m.treeView.selectedName()
 		if name == "" || m.current == nil {
 			return m, nil
 		}
-		if _, ok := m.current.Tree.Branches[name]; !ok {
-			m.errMsg = fmt.Sprintf("branch %q not in tree", name)
-			return m, nil
-		}
-		m.unlinkTarget = name
-		m.unlinkCount = len(m.current.Tree.SubtreeNames(name))
-		label := "branch"
-		if m.unlinkCount != 1 {
-			label = "branches"
-		}
-		m.unlinkConfirm = NewConfirm(ConfirmOptions{
-			Question: fmt.Sprintf(`Remove "%s" and %d %s from tree?`, name, m.unlinkCount, label),
-			Width:    m.width,
+		m.unlinkFlow = newUnlinkFlowModel(m.current, UnlinkFlowOptions{
+			Embedded:      true,
+			PrefillTarget: name,
 		})
-		m.screen = screenUnlinkConfirm
+		m.sizeUnlinkFlow()
+		m.screen = screenUnlink
 		m.errMsg = ""
-		return m, nil
+		return m, m.unlinkFlow.Init()
 	}
 	if key.Matches(msg, keys.MR) {
 		if m.current == nil {
@@ -412,79 +400,44 @@ func (m Model) updateTree(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) updateLink(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if key.Matches(msg, keys.Back) {
-		m.screen = screenTree
-		return m, nil
+func (m *Model) sizeLinkFlow() {
+	m.linkFlow.width = m.width
+	m.linkFlow.height = m.height
+	if m.linkFlow.step == stepLinkParent {
+		m.linkFlow.branchList.SetWidth(m.width)
+		m.linkFlow.branchList.SetHeight(m.height - 6)
 	}
-	if key.Matches(msg, keys.Tab) {
-		m.linkInput = 1 - m.linkInput
-		return m, nil
+}
+
+func (m *Model) sizeUnlinkFlow() {
+	m.unlinkFlow.width = m.width
+	m.unlinkFlow.height = m.height
+	if m.unlinkFlow.step == stepUnlinkPick {
+		m.unlinkFlow.branchList.SetWidth(m.width)
+		m.unlinkFlow.branchList.SetHeight(m.height - 6)
 	}
-	if key.Matches(msg, keys.Enter) {
-		if err := m.current.Link(m.linkParent, m.linkChild); err != nil {
-			m.errMsg = err.Error()
-			return m, nil
-		}
+	if m.unlinkFlow.step == stepUnlinkConfirm {
+		m.unlinkFlow = m.unlinkFlow.withConfirm(m.unlinkFlow.target)
+	}
+}
+
+func (m Model) finishEmbeddedLink() (tea.Model, tea.Cmd) {
+	success := !m.linkFlow.cancelled && m.linkFlow.step == stepLinkSuccess
+	m.linkFlow = LinkFlowModel{}
+	if success {
 		return m, m.selectProject(m.current)
 	}
-
-	if key.Matches(msg, keys.Quit) {
-		m.quitting = true
-		return m, tea.Quit
-	}
-
-	ch := msg.String()
-	if len(ch) != 1 {
-		return m, nil
-	}
-	if ch == "backspace" {
-		if m.linkInput == 0 {
-			m.linkParent = trimLast(m.linkParent)
-		} else {
-			m.linkChild = trimLast(m.linkChild)
-		}
-		return m, nil
-	}
-
-	if ch < " " || ch > "~" {
-		return m, nil
-	}
-	if m.linkInput == 0 {
-		m.linkParent += ch
-	} else {
-		m.linkChild += ch
-	}
+	m.screen = screenTree
 	return m, nil
 }
 
-func (m Model) updateUnlink(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if key.Matches(msg, keys.Quit) {
-		m.quitting = true
-		return m, tea.Quit
-	}
-
-	var choice ConfirmChoice
-	m.unlinkConfirm, choice = m.unlinkConfirm.Update(msg)
-	if choice == ConfirmNo {
-		m.screen = screenTree
-		m.unlinkTarget = ""
-		m.unlinkCount = 0
-		return m, nil
-	}
-	if choice == ConfirmYes {
-		parent, _ := m.current.Tree.ParentOf(m.unlinkTarget)
-		if _, err := m.current.Unlink(parent, m.unlinkTarget); err != nil {
-			m.errMsg = err.Error()
-			m.screen = screenTree
-			m.unlinkTarget = ""
-			m.unlinkCount = 0
-			return m, nil
-		}
-		m.unlinkTarget = ""
-		m.unlinkCount = 0
+func (m Model) finishEmbeddedUnlink() (tea.Model, tea.Cmd) {
+	success := !m.unlinkFlow.cancelled && m.unlinkFlow.step == stepUnlinkSuccess
+	m.unlinkFlow = UnlinkFlowModel{}
+	if success {
 		return m, m.selectProject(m.current)
 	}
+	m.screen = screenTree
 	return m, nil
 }
 
