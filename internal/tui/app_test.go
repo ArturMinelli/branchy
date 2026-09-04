@@ -204,14 +204,18 @@ func TestUpdateLinkSuccessRefreshesTree(t *testing.T) {
 	}
 }
 
-func TestTreePaintsLocalInboundBeforeRemoteMsg(t *testing.T) {
+func TestTreeDefersCountsUntilRemoteUpdate(t *testing.T) {
 	p := unlinkTestProject()
 	m := newModel([]*project.Project{p}, p)
-	if m.treeView.inbound == nil {
-		t.Fatal("expected local inbound snapshot before remote update")
+	if m.treeView.inbound != nil {
+		t.Fatal("expected no inbound snapshot before remote update")
 	}
 	if cmd := m.Init(); cmd == nil {
 		t.Fatal("expected remote update cmd after project selected")
+	}
+	view := stripANSI(m.View())
+	if !strings.Contains(view, "feature-a  ? ↓") {
+		t.Fatalf("expected unknown badges before fetch:\n%s", view)
 	}
 }
 

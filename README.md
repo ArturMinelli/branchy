@@ -55,6 +55,7 @@ Opens the branch tree viewer. Keys:
 - `u` — unlink selected branch and its subtree (config only)
 - `ctrl+↑` — set outbound direction (child→parent); rows with a count show `↑` after it
 - `ctrl+↓` — set inbound direction (parent→child); rows with a count show `↓` after it
+- `r` — reload file-change counts from the default remote (`origin`)
 - `esc` — back to project picker
 - `q` — quit
 

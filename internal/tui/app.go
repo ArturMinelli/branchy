@@ -137,16 +137,32 @@ func (m Model) applyRemoteUpdate(msg remoteUpdateMsg) Model {
 		return m
 	}
 	if msg.err != nil {
+		if m.treeView.inbound == nil && m.treeView.outbound == nil {
+			return m.withFreshFileCounts()
+		}
 		return m
 	}
+	m = m.withFreshFileCounts()
+	if m.screen == screenSync {
+		m.syncFlow = m.syncFlow.applyFileCounts(m.treeView.inbound, m.treeView.outbound)
+	}
+	return m
+}
+
+func (m Model) withFreshFileCounts() Model {
 	in := loadInboundCounts(m.current.Path, m.current.Tree)
 	out := loadOutboundCounts(m.current.Path, m.current.Tree)
 	m.treeView.setFileCounts(in, out)
 	m.treeView.setDirection(m.direction)
-	if m.screen == screenSync {
-		m.syncFlow = m.syncFlow.applyFileCounts(in, out)
-	}
 	return m
+}
+
+func (m Model) returnToTreeWithRefresh() (Model, tea.Cmd) {
+	m.screen = screenTree
+	if m.current == nil {
+		return m, nil
+	}
+	return m, remoteUpdateCmd(m.current)
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -159,8 +175,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		syncModel, cmd = m.syncFlow.Update(msg)
 		m.syncFlow = syncModel.(SyncFlowModel)
 		if m.syncFlow.finished {
-			m.screen = screenTree
 			m.syncFlow = SyncFlowModel{}
+			return m.returnToTreeWithRefresh()
 		}
 		return m, cmd
 	}
@@ -170,8 +186,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		mrModel, cmd = m.mrFlow.Update(msg)
 		m.mrFlow = mrModel.(MRFlowModel)
 		if m.mrFlow.finished || m.mrFlow.cancelled {
-			m.screen = screenTree
 			m.mrFlow = MRFlowModel{}
+			return m.returnToTreeWithRefresh()
 		}
 		return m, cmd
 	}
@@ -292,8 +308,9 @@ func (m *Model) selectProject(p *project.Project) tea.Cmd {
 	if p == nil {
 		return nil
 	}
-	m.treeView.setFileCounts(loadInboundCounts(p.Path, p.Tree), loadOutboundCounts(p.Path, p.Tree))
 	m.treeView.setDirection(m.direction)
+	// Counts load after the background fetch in applyRemoteUpdate so
+	// remote-tracking refs are fresh; badges show ? until then.
 	return remoteUpdateCmd(p)
 }
 

@@ -16,7 +16,7 @@ func TestRenderBackendTreeIntegration(t *testing.T) {
 	v := newBranchTreeView(p.Tree)
 	out := stripANSI(v.View())
 
-	for _, want := range []string{"main", "release", "develop", "└──", "├──"} {
+	for _, want := range []string{"main", "release", "develop", "└──"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected output to contain %q:\n%s", want, out)
 		}

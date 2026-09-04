@@ -150,8 +150,13 @@ func annotateCount(d sync.Direction, badge string) string {
 
 func (v BranchTreeView) renderRow(row branchRow, selected bool) string {
 	badge := ""
-	if c, ok := v.activeCounts()[row.name]; ok {
-		badge = formatFileChangeBadge(c)
+	if row.connector != "" {
+		counts := v.activeCounts()
+		if counts == nil {
+			badge = "?"
+		} else if c, ok := counts[row.name]; ok {
+			badge = formatFileChangeBadge(c)
+		}
 	}
 	cluster := annotateCount(v.direction, badge)
 	label := row.name

@@ -48,7 +48,10 @@ func TestEmbeddedSyncReturnsToTreeWhenFinished(t *testing.T) {
 	m.syncFlow.step = stepSyncSummary
 	m.syncFlow.results = []sync.Result{{Parent: "main", Child: "develop", Action: mr.ActionSkipped, Message: "skipped"}}
 
-	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected remote refresh when returning to tree from sync")
+	}
 	model := updated.(Model)
 	if model.screen != screenTree {
 		t.Fatalf("expected screenTree, got %d", model.screen)
