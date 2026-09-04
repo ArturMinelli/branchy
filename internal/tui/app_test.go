@@ -266,7 +266,7 @@ func TestDirectionChordsSetBadgesAndFooter(t *testing.T) {
 		map[string]fileChangeCount{"feature-a": {files: 5, ok: true}},
 		map[string]fileChangeCount{"feature-a": {files: 2, ok: true}},
 	)
-	m.treeView.setDirection(diffInbound)
+	m.treeView.setDirection(sync.Downward)
 
 	view := stripANSI(m.View())
 	if !strings.Contains(view, "feature-a  5 ↓") {
@@ -281,7 +281,7 @@ func TestDirectionChordsSetBadgesAndFooter(t *testing.T) {
 
 	updated, _ := m.updateTree(tea.KeyMsg{Type: tea.KeyCtrlUp})
 	model := updated.(Model)
-	if model.diffDirection != diffOutbound {
+	if model.direction != sync.Upward {
 		t.Fatal("expected outbound direction after ctrl+up")
 	}
 	view = stripANSI(model.View())
@@ -295,7 +295,7 @@ func TestDirectionChordsSetBadgesAndFooter(t *testing.T) {
 	cursor := model.treeView.cursor
 	updated, _ = model.updateTree(tea.KeyMsg{Type: tea.KeyCtrlUp})
 	model = updated.(Model)
-	if model.diffDirection != diffOutbound {
+	if model.direction != sync.Upward {
 		t.Fatal("second ctrl+up must stay outbound")
 	}
 	if model.treeView.cursor != cursor {
@@ -304,19 +304,19 @@ func TestDirectionChordsSetBadgesAndFooter(t *testing.T) {
 
 	updated, _ = model.updateTree(tea.KeyMsg{Type: tea.KeyCtrlDown})
 	model = updated.(Model)
-	if model.diffDirection != diffInbound {
+	if model.direction != sync.Downward {
 		t.Fatal("ctrl+down must set inbound")
 	}
 
 	updated, _ = model.updateTree(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	model = updated.(Model)
-	if model.diffDirection != diffInbound {
+	if model.direction != sync.Downward {
 		t.Fatal("d must not change direction")
 	}
 
 	updated, _ = model.updateTree(tea.KeyMsg{Type: tea.KeyDown})
 	model = updated.(Model)
-	if model.diffDirection != diffInbound {
+	if model.direction != sync.Downward {
 		t.Fatal("plain down must not change direction")
 	}
 	if model.treeView.cursor == cursor {
@@ -327,8 +327,8 @@ func TestDirectionChordsSetBadgesAndFooter(t *testing.T) {
 func TestRemoteUpdateKeepsDirection(t *testing.T) {
 	p := unlinkTestProject()
 	m := newModel([]*project.Project{p}, p)
-	m.diffDirection = diffOutbound
-	m.treeView.setDirection(diffOutbound)
+	m.direction = sync.Upward
+	m.treeView.setDirection(sync.Upward)
 	m.treeView.setFileCounts(
 		map[string]fileChangeCount{"feature-a": {files: 99, ok: true}},
 		map[string]fileChangeCount{"feature-a": {files: 88, ok: true}},
@@ -336,11 +336,54 @@ func TestRemoteUpdateKeepsDirection(t *testing.T) {
 
 	updated, _ := m.Update(remoteUpdateMsg{projectID: p.ID, path: p.Path})
 	model := updated.(Model)
-	if model.diffDirection != diffOutbound {
+	if model.direction != sync.Upward {
 		t.Fatal("remote refresh must not reset direction")
 	}
-	if model.treeView.direction != diffOutbound {
+	if model.treeView.direction != sync.Upward {
 		t.Fatal("tree direction must stay outbound after refresh")
+	}
+}
+
+func TestUpdateTreeReloadSchedulesRemoteUpdateCmd(t *testing.T) {
+	p := unlinkTestProject()
+	m := newModel([]*project.Project{p}, p)
+
+	updated, cmd := m.updateTree(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if cmd == nil {
+		t.Fatal("expected remote update cmd for r")
+	}
+	msg := cmd()
+	ru, ok := msg.(remoteUpdateMsg)
+	if !ok {
+		t.Fatalf("expected remoteUpdateMsg, got %T", msg)
+	}
+	if ru.projectID != p.ID {
+		t.Fatalf("projectID %q, want %q", ru.projectID, p.ID)
+	}
+	model := updated.(Model)
+	if model.current == nil || model.current.ID != p.ID {
+		t.Fatal("reload must not change current project")
+	}
+}
+
+func TestUpdateTreeReloadDoesNotBlockNavigation(t *testing.T) {
+	p := unlinkTestProject()
+	m := newModel([]*project.Project{p}, p)
+	cursor := m.treeView.cursor
+
+	updated, cmd := m.updateTree(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if cmd == nil {
+		t.Fatal("expected remote update cmd for r")
+	}
+	model := updated.(Model)
+
+	updated, cmd = model.updateTree(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	if cmd != nil {
+		t.Fatal("navigation must not wait for remote update")
+	}
+	model = updated.(Model)
+	if model.treeView.cursor == cursor {
+		t.Fatal("j must move cursor while reload is scheduled")
 	}
 }
 
@@ -357,27 +400,27 @@ func TestDirectionSurvivesSyncReturnAndProjectSwitch(t *testing.T) {
 	m := newModel([]*project.Project{p, other}, p)
 	updated, _ := m.updateTree(tea.KeyMsg{Type: tea.KeyCtrlUp})
 	model := updated.(Model)
-	if model.diffDirection != diffOutbound {
+	if model.direction != sync.Upward {
 		t.Fatal("expected outbound after ctrl+up")
 	}
 
 	// Simulate embedded sync finishing without running SyncFlowModel.Update.
 	model.screen = screenTree
 	model.syncFlow = SyncFlowModel{}
-	if model.diffDirection != diffOutbound {
+	if model.direction != sync.Upward {
 		t.Fatal("direction must survive sync return")
 	}
 
 	_ = model.selectProject(other)
-	if model.diffDirection != diffOutbound {
+	if model.direction != sync.Upward {
 		t.Fatal("direction must survive project switch")
 	}
-	if model.treeView.direction != diffOutbound {
+	if model.treeView.direction != sync.Upward {
 		t.Fatal("tree must mirror outbound after project switch")
 	}
 
 	fresh := newModel([]*project.Project{p}, p)
-	if fresh.diffDirection != diffInbound {
+	if fresh.direction != sync.Downward {
 		t.Fatal("new session must start inbound")
 	}
 }
@@ -385,8 +428,8 @@ func TestDirectionSurvivesSyncReturnAndProjectSwitch(t *testing.T) {
 func TestSyncFollowsTreeOutbound(t *testing.T) {
 	p := unlinkTestProject()
 	m := newModel([]*project.Project{p}, p)
-	m.diffDirection = diffOutbound
-	m.treeView.setDirection(diffOutbound)
+	m.direction = sync.Upward
+	m.treeView.setDirection(sync.Upward)
 	for i, row := range m.treeView.rows {
 		if row.name == "develop" {
 			m.treeView.cursor = i

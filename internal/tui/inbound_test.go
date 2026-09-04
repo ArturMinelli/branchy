@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"branchy/internal/sync"
 	"branchy/internal/tree"
 )
 
@@ -47,7 +48,7 @@ func TestLoadOutboundCountsOmitsRoots(t *testing.T) {
 }
 
 func TestTreeHelpFooter(t *testing.T) {
-	in := treeHelpFooter(diffInbound)
+	in := treeHelpFooter(sync.Downward)
 	if !strings.Contains(in, "ctrl+↑: outbound") || !strings.Contains(in, "ctrl+↓: inbound") {
 		t.Fatalf("inbound chords:\n%s", in)
 	}
@@ -57,7 +58,7 @@ func TestTreeHelpFooter(t *testing.T) {
 	if strings.Contains(in, "d: show") {
 		t.Fatalf("inbound footer must not list d:\n%s", in)
 	}
-	out := treeHelpFooter(diffOutbound)
+	out := treeHelpFooter(sync.Upward)
 	if !strings.Contains(out, "ctrl+↑: outbound") || !strings.Contains(out, "ctrl+↓: inbound") {
 		t.Fatalf("outbound chords:\n%s", out)
 	}
@@ -66,5 +67,11 @@ func TestTreeHelpFooter(t *testing.T) {
 	}
 	if strings.Contains(out, "d: show") {
 		t.Fatalf("outbound footer must not list d:\n%s", out)
+	}
+	if !strings.Contains(in, "r: reload") {
+		t.Fatalf("inbound footer must list r: reload:\n%s", in)
+	}
+	if !strings.Contains(out, "r: reload") {
+		t.Fatalf("outbound footer must list r: reload:\n%s", out)
 	}
 }

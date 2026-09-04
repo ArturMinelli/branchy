@@ -40,13 +40,14 @@ func EdgesBelow(doc *tree.Document, root string, dir Direction) []tree.Edge {
 
 // Result summarizes one MR attempt.
 type Result struct {
-	Parent  string
-	Child   string
-	Source  string
-	Target  string
-	Action  string // created, skipped, failed
-	URL     string
-	Message string
+	Parent     string
+	Child      string
+	Source     string
+	Target     string
+	Action     mr.Action
+	SkipReason mr.SkipReason
+	URL        string
+	Message    string
 }
 
 // Arrow returns the display ends for this result (MR source → target).
@@ -95,12 +96,13 @@ func Begin(p *project.Project, from string, dir Direction) ([]tree.Edge, error) 
 func SkippedByUser(edge tree.Edge, dir Direction) Result {
 	source, target := Ends(edge, dir)
 	return Result{
-		Parent:  edge.Parent,
-		Child:   edge.Child,
-		Source:  source,
-		Target:  target,
-		Action:  mr.ActionSkipped,
-		Message: "skipped by user",
+		Parent:     edge.Parent,
+		Child:      edge.Child,
+		Source:     source,
+		Target:     target,
+		Action:     mr.ActionSkipped,
+		SkipReason: mr.SkipUserDeclined,
+		Message:    "skipped by user",
 	}
 }
 
@@ -168,7 +170,7 @@ func OpenableURLs(summary *Summary) []string {
 		case mr.ActionCreated:
 			urls = append(urls, r.URL)
 		case mr.ActionSkipped:
-			if r.Message == "skipped by user" {
+			if r.SkipReason == mr.SkipUserDeclined {
 				continue
 			}
 			urls = append(urls, r.URL)
@@ -184,7 +186,7 @@ func processEdge(p *project.Project, edge tree.Edge, opts Options) Result {
 	if opts.Confirm != nil {
 		ok, err := opts.Confirm(edge.Parent, edge.Child)
 		if err != nil {
-			res.Action = "failed"
+			res.Action = mr.ActionFailed
 			res.Message = err.Error()
 			return res
 		}
@@ -201,12 +203,13 @@ func processEdge(p *project.Project, edge tree.Edge, opts Options) Result {
 		Description: fmt.Sprintf("Automated branch sync created by branchy on %s.", ts),
 	})
 	if err != nil {
-		res.Action = "failed"
+		res.Action = mr.ActionFailed
 		res.Message = err.Error()
 		return res
 	}
 
 	res.Action = mrRes.Action
+	res.SkipReason = mrRes.SkipReason
 	res.URL = mrRes.URL
 	res.Message = mrRes.Message
 	return res

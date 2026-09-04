@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"branchy/internal/project"
+	"branchy/internal/sync"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
@@ -33,20 +34,20 @@ func (i projectItem) FilterValue() string { return i.id + " " + i.path }
 
 // Model is the root Bubble Tea model.
 type Model struct {
-	screen        screen
-	width         int
-	height        int
-	projects      []*project.Project
-	projectList   list.Model
-	treeView      BranchTreeView
-	current       *project.Project
-	diffDirection diffDirection
-	syncFlow      SyncFlowModel
-	linkFlow      LinkFlowModel
-	unlinkFlow    UnlinkFlowModel
-	mrFlow        MRFlowModel
-	errMsg        string
-	quitting      bool
+	screen      screen
+	width       int
+	height      int
+	projects    []*project.Project
+	projectList list.Model
+	treeView    BranchTreeView
+	current     *project.Project
+	direction   sync.Direction
+	syncFlow    SyncFlowModel
+	linkFlow    LinkFlowModel
+	unlinkFlow  UnlinkFlowModel
+	mrFlow      MRFlowModel
+	errMsg      string
+	quitting    bool
 }
 
 type keyMap struct {
@@ -60,6 +61,7 @@ type keyMap struct {
 	MR            key.Binding
 	DirectionUp   key.Binding
 	DirectionDown key.Binding
+	Reload        key.Binding
 	Quit          key.Binding
 }
 
@@ -74,6 +76,7 @@ var keys = keyMap{
 	MR:            key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "mr")),
 	DirectionUp:   key.NewBinding(key.WithKeys("ctrl+up"), key.WithHelp("ctrl+↑", "outbound")),
 	DirectionDown: key.NewBinding(key.WithKeys("ctrl+down"), key.WithHelp("ctrl+↓", "inbound")),
+	Reload:        key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "reload")),
 	Quit:          key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 }
 
@@ -139,7 +142,7 @@ func (m Model) applyRemoteUpdate(msg remoteUpdateMsg) Model {
 	in := loadInboundCounts(m.current.Path, m.current.Tree)
 	out := loadOutboundCounts(m.current.Path, m.current.Tree)
 	m.treeView.setFileCounts(in, out)
-	m.treeView.setDirection(m.diffDirection)
+	m.treeView.setDirection(m.direction)
 	if m.screen == screenSync {
 		m.syncFlow = m.syncFlow.applyFileCounts(in, out)
 	}
@@ -261,7 +264,7 @@ func (m Model) View() string {
 			b.WriteString(m.treeView.View())
 			b.WriteString("\n")
 		}
-		for i, line := range strings.Split(treeHelpFooter(m.diffDirection), "\n") {
+		for i, line := range strings.Split(treeHelpFooter(m.direction), "\n") {
 			if i > 0 {
 				b.WriteString("\n")
 			}
@@ -290,7 +293,7 @@ func (m *Model) selectProject(p *project.Project) tea.Cmd {
 		return nil
 	}
 	m.treeView.setFileCounts(loadInboundCounts(p.Path, p.Tree), loadOutboundCounts(p.Path, p.Tree))
-	m.treeView.setDirection(m.diffDirection)
+	m.treeView.setDirection(m.direction)
 	return remoteUpdateCmd(p)
 }
 
@@ -329,7 +332,7 @@ func (m Model) updateTree(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if name := m.treeView.selectedName(); name != "" {
 			m.syncFlow = newSyncFlowModel(m.current, name, SyncFlowOptions{
 				Embedded:  true,
-				Direction: syncDirection(m.diffDirection),
+				Direction: m.direction,
 			})
 			m.syncFlow.width = m.width
 			m.syncFlow.height = m.height
@@ -379,14 +382,20 @@ func (m Model) updateTree(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.errMsg = ""
 		return m, nil
 	}
+	if key.Matches(msg, keys.Reload) {
+		if m.current != nil {
+			return m, remoteUpdateCmd(m.current)
+		}
+		return m, nil
+	}
 	if key.Matches(msg, keys.DirectionUp) {
-		m.diffDirection = diffOutbound
-		m.treeView.setDirection(m.diffDirection)
+		m.direction = sync.Upward
+		m.treeView.setDirection(m.direction)
 		return m, nil
 	}
 	if key.Matches(msg, keys.DirectionDown) {
-		m.diffDirection = diffInbound
-		m.treeView.setDirection(m.diffDirection)
+		m.direction = sync.Downward
+		m.treeView.setDirection(m.direction)
 		return m, nil
 	}
 	if key.Matches(msg, keys.Up) {

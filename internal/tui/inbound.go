@@ -6,15 +6,8 @@ import (
 	"strconv"
 
 	"branchy/internal/git"
+	"branchy/internal/sync"
 	"branchy/internal/tree"
-)
-
-// diffDirection is the session-scoped main-tree count mode.
-type diffDirection int
-
-const (
-	diffInbound diffDirection = iota
-	diffOutbound
 )
 
 // fileChangeCount is the cached comparison of a child against its tree parent.
@@ -87,10 +80,10 @@ func directionChordHints() string {
 	return "ctrl+↑: outbound  ctrl+↓: inbound"
 }
 
-func treeHelpFooter(d diffDirection) string {
+func treeHelpFooter(d sync.Direction) string {
 	mode := "counts: inbound (parent→child)"
-	if d == diffOutbound {
+	if d == sync.Upward {
 		mode = "counts: outbound (child→parent)"
 	}
-	return "↑/↓: navigate  " + directionChordHints() + "  s: sync  m: mr  l: link  u: unlink  esc: projects  q: quit\n" + mode
+	return "↑/↓: navigate  r: reload  " + directionChordHints() + "  s: sync  m: mr  l: link  u: unlink  esc: projects  q: quit\n" + mode
 }

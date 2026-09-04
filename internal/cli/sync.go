@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"branchy/internal/browser"
+	"branchy/internal/mr"
 	"branchy/internal/project"
 	"branchy/internal/sync"
 	"branchy/internal/tui"
@@ -98,16 +99,16 @@ func runSyncCLI(cmd *cobra.Command) error {
 	created, skipped, failed := 0, 0, 0
 	for _, r := range summary.Results {
 		switch r.Action {
-		case "created":
+		case mr.ActionCreated:
 			created++
 			fmt.Printf("Created: %s → %s\n  %s\n", r.Parent, r.Child, r.URL)
-		case "skipped":
+		case mr.ActionSkipped:
 			skipped++
 			fmt.Printf("Skipped: %s → %s (%s)\n", r.Parent, r.Child, r.Message)
 			if r.URL != "" {
 				fmt.Printf("  %s\n", r.URL)
 			}
-		case "failed":
+		case mr.ActionFailed:
 			failed++
 			fmt.Printf("Failed: %s → %s — %s\n", r.Parent, r.Child, r.Message)
 		}

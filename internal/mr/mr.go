@@ -9,10 +9,22 @@ import (
 	"branchy/internal/tree"
 )
 
+// Action is the outcome of one merge-request attempt.
+type Action string
+
 const (
-	ActionCreated = "created"
-	ActionSkipped = "skipped"
-	ActionFailed  = "failed"
+	ActionCreated Action = "created"
+	ActionSkipped Action = "skipped"
+	ActionFailed  Action = "failed"
+)
+
+// SkipReason distinguishes skipped subtypes. It is contributor-facing, not printed.
+type SkipReason string
+
+const (
+	SkipNone         SkipReason = ""
+	SkipAlreadyOpen  SkipReason = "already_open"
+	SkipUserDeclined SkipReason = "user_declined"
 )
 
 // CreateRequest holds parameters for a single MR creation attempt.
@@ -25,11 +37,12 @@ type CreateRequest struct {
 
 // CreateResult summarizes one MR attempt.
 type CreateResult struct {
-	Source  string
-	Target  string
-	Action  string
-	URL     string
-	Message string
+	Source     string
+	Target     string
+	Action     Action
+	SkipReason SkipReason
+	URL        string
+	Message    string
 }
 
 // DefaultTitle returns the standard MR title for a source→target pair.
@@ -62,6 +75,13 @@ func ValidateBranches(doc *tree.Document, source, target string) error {
 
 // Create validates branches, checks for an existing open MR, and creates one if needed.
 // It does not open a browser; callers handle that.
+//
+// Return matrix:
+//   - validation (empty, equal, or unknown branch) → (nil, err); GitLab is not called
+//   - auth failure → (nil, err)
+//   - already-open (found or recovered after create race) → skipped + SkipAlreadyOpen, nil error
+//   - unrecovered GitLab create failure → failed result, nil error
+//   - created → created result, nil error
 func Create(p *project.Project, req CreateRequest) (*CreateResult, error) {
 	if err := ValidateBranches(p.Tree, req.Source, req.Target); err != nil {
 		return nil, err
@@ -91,6 +111,7 @@ func Create(p *project.Project, req CreateRequest) (*CreateResult, error) {
 	}
 	if existing != "" {
 		res.Action = ActionSkipped
+		res.SkipReason = SkipAlreadyOpen
 		res.URL = existing
 		res.Message = "open MR already exists"
 		return res, nil
@@ -101,12 +122,14 @@ func Create(p *project.Project, req CreateRequest) (*CreateResult, error) {
 		// Race or glab quirk: treat recovered existing open MR as skip, not failure.
 		if gitlab.IsAlreadyExists(err) && url != "" {
 			res.Action = ActionSkipped
+			res.SkipReason = SkipAlreadyOpen
 			res.URL = url
 			res.Message = "open MR already exists"
 			return res, nil
 		}
 		if existing, findErr := client.FindOpenMR(req.Source, req.Target); findErr == nil && existing != "" {
 			res.Action = ActionSkipped
+			res.SkipReason = SkipAlreadyOpen
 			res.URL = existing
 			res.Message = "open MR already exists"
 			return res, nil

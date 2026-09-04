@@ -201,14 +201,7 @@ func syncPickerHelp(dir sync.Direction) string {
 	if dir == sync.Upward {
 		mode = "sync: upward (child→parent)"
 	}
-	return "↑/↓: navigate  enter: select  " + directionChordHints() + "  esc: cancel  q: quit\n" + mode
-}
-
-func syncDirection(d diffDirection) sync.Direction {
-	if d == diffOutbound {
-		return sync.Upward
-	}
-	return sync.Downward
+	return "↑/↓: navigate  enter: select  r: reload  " + directionChordHints() + "  esc: cancel  q: quit\n" + mode
 }
 
 func (m SyncFlowModel) resetBrowserConfirm() SyncFlowModel {
@@ -345,6 +338,12 @@ func (m SyncFlowModel) updatePickRoot(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if key.Matches(msg, syncKeys.DirectionDown) {
 		return m.setPickerDirection(sync.Downward), nil
 	}
+	if key.Matches(msg, syncKeys.Reload) {
+		if m.project != nil {
+			return m, remoteUpdateCmd(m.project)
+		}
+		return m, nil
+	}
 	if key.Matches(msg, flowKeys.Enter) {
 		item, ok := m.branchList.SelectedItem().(branchItem)
 		if !ok {
@@ -469,6 +468,7 @@ type syncKeyMap struct {
 	No            key.Binding
 	DirectionUp   key.Binding
 	DirectionDown key.Binding
+	Reload        key.Binding
 }
 
 var syncKeys = syncKeyMap{
@@ -479,6 +479,7 @@ var syncKeys = syncKeyMap{
 	No:            key.NewBinding(key.WithKeys("n")),
 	DirectionUp:   key.NewBinding(key.WithKeys("ctrl+up")),
 	DirectionDown: key.NewBinding(key.WithKeys("ctrl+down")),
+	Reload:        key.NewBinding(key.WithKeys("r")),
 }
 
 func (m SyncFlowModel) setPickerDirection(dir sync.Direction) SyncFlowModel {
@@ -507,6 +508,12 @@ func (m SyncFlowModel) updateEdgeConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if key.Matches(msg, syncKeys.Back) {
 		return m.cancelRemaining()
+	}
+	if key.Matches(msg, syncKeys.Reload) {
+		if m.project != nil {
+			return m, remoteUpdateCmd(m.project)
+		}
+		return m, nil
 	}
 
 	var choice ConfirmChoice

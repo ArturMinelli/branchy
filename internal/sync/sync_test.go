@@ -11,10 +11,10 @@ import (
 func TestCreatedURLsFiltersAndPreservesOrder(t *testing.T) {
 	summary := &Summary{
 		Results: []Result{
-			{Parent: "a", Child: "b", Action: "created", URL: "https://example.com/1"},
-			{Parent: "b", Child: "c", Action: "skipped", URL: "https://example.com/2"},
-			{Parent: "c", Child: "d", Action: "created", URL: "https://example.com/3"},
-			{Parent: "d", Child: "e", Action: "failed", URL: ""},
+			{Parent: "a", Child: "b", Action: mr.ActionCreated, URL: "https://example.com/1"},
+			{Parent: "b", Child: "c", Action: mr.ActionSkipped, SkipReason: mr.SkipAlreadyOpen, URL: "https://example.com/2"},
+			{Parent: "c", Child: "d", Action: mr.ActionCreated, URL: "https://example.com/3"},
+			{Parent: "d", Child: "e", Action: mr.ActionFailed, URL: ""},
 		},
 	}
 
@@ -33,11 +33,12 @@ func TestCreatedURLsFiltersAndPreservesOrder(t *testing.T) {
 func TestOpenableURLsIncludesExistingSkips(t *testing.T) {
 	summary := &Summary{
 		Results: []Result{
-			{Parent: "a", Child: "b", Action: "created", URL: "https://example.com/1"},
-			{Parent: "b", Child: "c", Action: "skipped", URL: "https://example.com/2", Message: "open MR already exists"},
-			{Parent: "c", Child: "d", Action: "skipped", Message: "skipped by user"},
-			{Parent: "d", Child: "e", Action: "failed", URL: ""},
-			{Parent: "e", Child: "f", Action: "created", URL: "https://example.com/3"},
+			{Parent: "a", Child: "b", Action: mr.ActionCreated, URL: "https://example.com/1"},
+			{Parent: "b", Child: "c", Action: mr.ActionSkipped, SkipReason: mr.SkipAlreadyOpen, URL: "https://example.com/2", Message: "open MR already exists"},
+			{Parent: "c", Child: "d", Action: mr.ActionSkipped, SkipReason: mr.SkipUserDeclined, Message: "skipped by user"},
+			{Parent: "d", Child: "e", Action: mr.ActionFailed, URL: ""},
+			{Parent: "e", Child: "f", Action: mr.ActionCreated, URL: "https://example.com/3"},
+			{Parent: "f", Child: "g", Action: mr.ActionSkipped, SkipReason: mr.SkipUserDeclined, URL: "https://example.com/declined", Message: "skipped by user"},
 		},
 	}
 
@@ -154,7 +155,7 @@ func TestSkippedByUser(t *testing.T) {
 	edge := tree.Edge{Parent: "main", Child: "develop"}
 
 	down := SkippedByUser(edge, Downward)
-	if down.Action != mr.ActionSkipped || down.Message != "skipped by user" {
+	if down.Action != mr.ActionSkipped || down.SkipReason != mr.SkipUserDeclined || down.Message != "skipped by user" {
 		t.Fatalf("down: %+v", down)
 	}
 	if down.Source != "main" || down.Target != "develop" {

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"branchy/internal/project"
 	"branchy/internal/tree"
 )
 
@@ -28,6 +29,24 @@ func TestValidateBranches(t *testing.T) {
 	}
 	if err := ValidateBranches(doc, "develop", "missing"); err == nil {
 		t.Fatal("expected missing target error")
+	}
+}
+
+func TestCreateValidationReturnsError(t *testing.T) {
+	p := &project.Project{Tree: testTree()}
+	cases := []CreateRequest{
+		{Source: "missing", Target: "develop"},
+		{Source: "develop", Target: "missing"},
+		{Source: "develop", Target: "develop"},
+	}
+	for _, req := range cases {
+		res, err := Create(p, req)
+		if err == nil {
+			t.Fatalf("%+v: expected error", req)
+		}
+		if res != nil {
+			t.Fatalf("%+v: expected nil result, got %+v", req, res)
+		}
 	}
 }
 

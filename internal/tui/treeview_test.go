@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"branchy/internal/sync"
 	"branchy/internal/tree"
 )
 
@@ -110,7 +111,7 @@ func TestTreeViewDirectionToggleBadges(t *testing.T) {
 		t.Fatalf("default inbound badge:\n%s", in)
 	}
 
-	v.setDirection(diffOutbound)
+	v.setDirection(sync.Upward)
 	out := stripANSI(v.View())
 	if !strings.Contains(out, "child  2") {
 		t.Fatalf("outbound badge:\n%s", out)
@@ -119,7 +120,7 @@ func TestTreeViewDirectionToggleBadges(t *testing.T) {
 		t.Fatalf("inbound badge must not remain in outbound mode:\n%s", out)
 	}
 
-	v.setDirection(diffInbound)
+	v.setDirection(sync.Downward)
 	back := stripANSI(v.View())
 	if !strings.Contains(back, "child  5") {
 		t.Fatalf("restored inbound badge:\n%s", back)
@@ -142,7 +143,7 @@ func TestTreeViewZeroHidePerDirection(t *testing.T) {
 		t.Fatalf("inbound non-zero:\n%s", in)
 	}
 
-	v.setDirection(diffOutbound)
+	v.setDirection(sync.Upward)
 	out := stripANSI(v.View())
 	if strings.Contains(out, "child  0") || strings.Contains(out, "child  3") {
 		t.Fatalf("outbound zero must hide badge:\n%s", out)
@@ -164,7 +165,7 @@ func TestTreeViewUnknownBothDirections(t *testing.T) {
 	if !strings.Contains(in, "missing  ?") {
 		t.Fatalf("inbound unknown:\n%s", in)
 	}
-	v.setDirection(diffOutbound)
+	v.setDirection(sync.Upward)
 	out := stripANSI(v.View())
 	if !strings.Contains(out, "missing  ?") {
 		t.Fatalf("outbound unknown:\n%s", out)
@@ -201,7 +202,7 @@ func TestTreeViewDirectionArrows(t *testing.T) {
 		t.Fatalf("hidden zero must stay hidden:\n%s", in)
 	}
 
-	v.setDirection(diffOutbound)
+	v.setDirection(sync.Upward)
 	out := stripANSI(v.View())
 	if strings.Contains(out, "12 ↓") || strings.Contains(out, "release  12") {
 		t.Fatalf("outbound zero must hide count and arrow:\n%s", out)

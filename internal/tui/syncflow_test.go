@@ -167,7 +167,8 @@ func TestSyncFlowSummaryToBrowserWhenExistingSkip(t *testing.T) {
 	m.step = stepSyncSummary
 	m.results = []sync.Result{{
 		Parent: "main", Child: "develop", Action: mr.ActionSkipped,
-		URL: "https://example.com/existing", Message: "open MR already exists",
+		SkipReason: mr.SkipAlreadyOpen,
+		URL:        "https://example.com/existing", Message: "open MR already exists",
 	}}
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	flow := updated.(SyncFlowModel)
@@ -179,7 +180,7 @@ func TestSyncFlowSummaryToBrowserWhenExistingSkip(t *testing.T) {
 func TestSyncFlowSummarySkipsBrowserWhenNoCreates(t *testing.T) {
 	m := testSyncFlowAtConfirm()
 	m.step = stepSyncSummary
-	m.results = []sync.Result{{Parent: "main", Child: "develop", Action: mr.ActionSkipped, Message: "skipped by user"}}
+	m.results = []sync.Result{{Parent: "main", Child: "develop", Action: mr.ActionSkipped, SkipReason: mr.SkipUserDeclined, Message: "skipped by user"}}
 	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	flow := updated.(SyncFlowModel)
 	if !flow.finished {
@@ -356,6 +357,75 @@ func TestSyncFlowRemoteUpdateFailureKeepsSnapshot(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(flow.View()), "fetch") {
 		t.Fatalf("view must not mention fetch:\n%s", flow.View())
+	}
+}
+
+func TestSyncPickRootReloadSchedulesCmd(t *testing.T) {
+	m := newSyncFlowModel(testSyncProject(), "", SyncFlowOptions{})
+	updated, cmd := m.updatePickRoot(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if cmd == nil {
+		t.Fatal("expected remote update cmd for r on picker")
+	}
+	msg := cmd()
+	ru, ok := msg.(remoteUpdateMsg)
+	if !ok {
+		t.Fatalf("expected remoteUpdateMsg, got %T", msg)
+	}
+	if ru.projectID != "test" {
+		t.Fatalf("projectID %q", ru.projectID)
+	}
+	flow := updated.(SyncFlowModel)
+	if flow.step != stepSyncPickRoot {
+		t.Fatalf("expected to stay on picker, got step %d", flow.step)
+	}
+}
+
+func TestSyncEdgeConfirmReloadSchedulesCmd(t *testing.T) {
+	m := testSyncFlowAtConfirm()
+	updated, cmd := m.updateEdgeConfirm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if cmd == nil {
+		t.Fatal("expected remote update cmd for r on confirm")
+	}
+	msg := cmd()
+	if _, ok := msg.(remoteUpdateMsg); !ok {
+		t.Fatalf("expected remoteUpdateMsg, got %T", msg)
+	}
+	flow := updated.(SyncFlowModel)
+	if flow.step != stepSyncEdgeConfirm {
+		t.Fatalf("expected to stay on confirm, got step %d", flow.step)
+	}
+	if flow.edgeIndex != 0 {
+		t.Fatalf("reload must not advance edge, index=%d", flow.edgeIndex)
+	}
+	if len(flow.results) != 0 {
+		t.Fatal("reload must not skip or confirm edge")
+	}
+}
+
+func TestSyncPickerHelpListsReload(t *testing.T) {
+	for _, dir := range []sync.Direction{sync.Downward, sync.Upward} {
+		help := syncPickerHelp(dir)
+		if !strings.Contains(help, "r: reload") {
+			t.Fatalf("picker help must list r: reload for %v:\n%s", dir, help)
+		}
+	}
+}
+
+func TestSyncEdgeConfirmReloadDoesNotBlockConfirm(t *testing.T) {
+	m := testSyncFlowAtConfirm()
+	updated, cmd := m.updateEdgeConfirm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if cmd == nil {
+		t.Fatal("expected remote update cmd for r")
+	}
+	flow := updated.(SyncFlowModel)
+
+	updated, cmd = flow.updateEdgeConfirm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if cmd != nil {
+		t.Fatal("decline must not wait for remote update")
+	}
+	flow = updated.(SyncFlowModel)
+	if len(flow.results) != 1 {
+		t.Fatalf("expected skip after reload scheduled, got %d results", len(flow.results))
 	}
 }
 

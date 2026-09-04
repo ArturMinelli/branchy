@@ -5,6 +5,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
+	"branchy/internal/sync"
 	"branchy/internal/tree"
 )
 
@@ -32,7 +33,7 @@ type BranchTreeView struct {
 	width     int
 	inbound   map[string]fileChangeCount
 	outbound  map[string]fileChangeCount
-	direction diffDirection
+	direction sync.Direction
 }
 
 func newBranchTreeView(doc *tree.Document) BranchTreeView {
@@ -82,12 +83,12 @@ func (v *BranchTreeView) setFileCounts(inbound, outbound map[string]fileChangeCo
 	v.outbound = outbound
 }
 
-func (v *BranchTreeView) setDirection(d diffDirection) {
+func (v *BranchTreeView) setDirection(d sync.Direction) {
 	v.direction = d
 }
 
 func (v BranchTreeView) activeCounts() map[string]fileChangeCount {
-	if v.direction == diffOutbound {
+	if v.direction == sync.Upward {
 		return v.outbound
 	}
 	return v.inbound
@@ -133,14 +134,14 @@ func (v BranchTreeView) View() string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func directionArrow(d diffDirection) string {
-	if d == diffOutbound {
+func directionArrow(d sync.Direction) string {
+	if d == sync.Upward {
 		return "↑"
 	}
 	return "↓"
 }
 
-func annotateCount(d diffDirection, badge string) string {
+func annotateCount(d sync.Direction, badge string) string {
 	if badge == "" {
 		return ""
 	}

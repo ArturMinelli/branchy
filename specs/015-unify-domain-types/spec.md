@@ -112,3 +112,12 @@ A contributor calling create knows: invalid input (unknown branch, same source/t
 | Behavior | Outcome freeze; no new direction flags or key changes |
 | Operation home | Types live with existing sync / MR / tree areas (deepen, not a new layer) |
 | Auth / presentation | Already handled in 011 and 014 |
+
+## Decisions (Grilling Session 2026-08-24)
+
+| Topic | Decision |
+|-------|----------|
+| Plan target | 015 (014 already planned and implemented) |
+| Direction type | Keep `sync.Direction` (`Downward`/`Upward`); TUI drops `diffDirection` and uses `sync.Direction` |
+| Outcomes | Typed `mr.Action` on `CreateResult` and `sync.Result`; add `SkipReason`; `OpenableURLs` uses `SkipReason`, not `Message` |
+| Create errors | Validation/auth → error; already-open → skipped+nil; GitLab fail → failed result+nil; CLI `mr` maps failed → non-zero exit |
