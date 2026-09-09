@@ -108,6 +108,10 @@ func (m SyncFlowModel) applyFileCounts(in, out map[string]fileChangeCount) SyncF
 	return m.refreshCountSurfaces()
 }
 
+func (m SyncFlowModel) restoreReloadSnapshot() SyncFlowModel { return m }
+
+func (m SyncFlowModel) clearReloadSnapshot() SyncFlowModel { return m }
+
 func (m SyncFlowModel) activeCounts() map[string]fileChangeCount {
 	if m.direction == sync.Upward {
 		return m.outbound

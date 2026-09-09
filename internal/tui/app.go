@@ -46,8 +46,9 @@ type Model struct {
 	linkFlow    LinkFlowModel
 	unlinkFlow  UnlinkFlowModel
 	mrFlow      MRFlowModel
-	errMsg      string
-	quitting    bool
+	errMsg         string
+	quitting       bool
+	reloadSnapshot *countSnapshot
 }
 
 type keyMap struct {
@@ -132,19 +133,40 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
+func (m Model) beginReload() Model {
+	if m.current == nil || m.reloadSnapshot != nil {
+		return m
+	}
+	m.reloadSnapshot = snapshotCounts(m.treeView.inbound, m.treeView.outbound)
+	m.treeView.setFileCounts(nil, nil)
+	return m
+}
+
 func (m Model) applyRemoteUpdate(msg remoteUpdateMsg) Model {
 	if m.current == nil || msg.projectID != m.current.ID {
 		return m
 	}
 	if msg.err != nil {
+		if m.reloadSnapshot != nil {
+			var in, out map[string]fileChangeCount
+			m.reloadSnapshot.Restore(&in, &out)
+			m.treeView.setFileCounts(in, out)
+			m.reloadSnapshot = nil
+			if m.screen == screenSync {
+				m.syncFlow = m.syncFlow.restoreReloadSnapshot()
+			}
+			return m
+		}
 		if m.treeView.inbound == nil && m.treeView.outbound == nil {
 			return m.withFreshFileCounts()
 		}
 		return m
 	}
+	m.reloadSnapshot = nil
 	m = m.withFreshFileCounts()
 	if m.screen == screenSync {
 		m.syncFlow = m.syncFlow.applyFileCounts(m.treeView.inbound, m.treeView.outbound)
+		m.syncFlow.clearReloadSnapshot()
 	}
 	return m
 }
@@ -401,6 +423,7 @@ func (m Model) updateTree(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if key.Matches(msg, keys.Reload) {
 		if m.current != nil {
+			m = m.beginReload()
 			return m, remoteUpdateCmd(m.current)
 		}
 		return m, nil

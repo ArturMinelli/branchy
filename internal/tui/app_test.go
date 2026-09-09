@@ -348,6 +348,69 @@ func TestRemoteUpdateKeepsDirection(t *testing.T) {
 	}
 }
 
+func TestUpdateTreeReloadShowsQuestionMarks(t *testing.T) {
+	p := unlinkTestProject()
+	m := newModel([]*project.Project{p}, p)
+	m.treeView.setFileCounts(
+		map[string]fileChangeCount{"feature-a": {files: 5, ok: true}},
+		map[string]fileChangeCount{"feature-a": {files: 2, ok: true}},
+	)
+
+	updated, cmd := m.updateTree(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if cmd == nil {
+		t.Fatal("expected remote update cmd for r")
+	}
+	model := updated.(Model)
+	if model.treeView.inbound != nil || model.treeView.outbound != nil {
+		t.Fatal("reload must clear counts to nil")
+	}
+	view := stripANSI(model.View())
+	if !strings.Contains(view, "feature-a  ?") {
+		t.Fatalf("expected ? badges during reload:\n%s", view)
+	}
+}
+
+func TestReloadFailureRestoresSnapshot(t *testing.T) {
+	p := unlinkTestProject()
+	m := newModel([]*project.Project{p}, p)
+	m.treeView.setFileCounts(
+		map[string]fileChangeCount{"feature-a": {files: 99, ok: true}},
+		nil,
+	)
+	m = m.beginReload()
+
+	updated, _ := m.Update(remoteUpdateMsg{projectID: p.ID, path: p.Path, err: errors.New("offline")})
+	model := updated.(Model)
+	if model.treeView.inbound["feature-a"].files != 99 {
+		t.Fatal("failed reload must restore prior snapshot")
+	}
+	if model.reloadSnapshot != nil {
+		t.Fatal("snapshot must be cleared after restore")
+	}
+}
+
+func TestRepeatReloadKeepsOriginalSnapshot(t *testing.T) {
+	p := unlinkTestProject()
+	m := newModel([]*project.Project{p}, p)
+	m.treeView.setFileCounts(
+		map[string]fileChangeCount{"feature-a": {files: 42, ok: true}},
+		nil,
+	)
+
+	m = m.beginReload()
+	m.treeView.setFileCounts(
+		map[string]fileChangeCount{"feature-a": {files: 0, ok: true}},
+		nil,
+	)
+	m = m.beginReload()
+
+	updated, _ := m.Update(remoteUpdateMsg{projectID: p.ID, path: p.Path, err: errors.New("offline")})
+	model := updated.(Model)
+	if model.treeView.inbound["feature-a"].files != 42 {
+		t.Fatal("second beginReload must not overwrite original snapshot")
+	}
+}
+
 func TestUpdateTreeReloadSchedulesRemoteUpdateCmd(t *testing.T) {
 	p := unlinkTestProject()
 	m := newModel([]*project.Project{p}, p)
