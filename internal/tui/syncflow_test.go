@@ -380,6 +380,57 @@ func TestSyncPickRootReloadSchedulesCmd(t *testing.T) {
 	}
 }
 
+func TestSyncPickRootReloadShowsQuestionMarks(t *testing.T) {
+	m := newSyncFlowModel(testSyncProject(), "", SyncFlowOptions{})
+	m.inbound = map[string]fileChangeCount{"develop": {files: 7, ok: true}}
+	m = m.refreshPicker()
+
+	updated, cmd := m.updatePickRoot(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if cmd == nil {
+		t.Fatal("expected remote update cmd")
+	}
+	flow := updated.(SyncFlowModel)
+	if flow.inbound != nil {
+		t.Fatal("reload must clear inbound counts")
+	}
+	byName := pickerByName(t, flow)
+	if byName["develop"].badge != "?" {
+		t.Fatalf("expected ? badge during reload, got %q", byName["develop"].badge)
+	}
+}
+
+func TestSyncEdgeConfirmReloadShowsUnavailable(t *testing.T) {
+	m := testSyncFlowAtConfirm()
+	m.inbound = map[string]fileChangeCount{"develop": {files: 7, ok: true}}
+	m = m.resetEdgeConfirm()
+
+	updated, cmd := m.updateEdgeConfirm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	if cmd == nil {
+		t.Fatal("expected remote update cmd")
+	}
+	flow := updated.(SyncFlowModel)
+	view := flow.View()
+	if !strings.Contains(view, "File count unavailable") {
+		t.Fatalf("expected unavailable confirm line during reload:\n%s", view)
+	}
+}
+
+func TestSyncReloadFailureRestoresSnapshot(t *testing.T) {
+	m := testSyncFlowAtConfirm()
+	m.inbound = map[string]fileChangeCount{"develop": {files: 7, ok: true}}
+	m = m.resetEdgeConfirm()
+	m = m.beginReload()
+
+	updated, _ := m.Update(remoteUpdateMsg{projectID: "test", path: "/tmp/test", err: errors.New("offline")})
+	flow := updated.(SyncFlowModel)
+	if flow.inbound["develop"].files != 7 {
+		t.Fatal("failed sync reload must restore snapshot")
+	}
+	if !strings.Contains(flow.View(), "7 files would change on develop") {
+		t.Fatalf("confirm must show restored count:\n%s", flow.View())
+	}
+}
+
 func TestSyncEdgeConfirmReloadSchedulesCmd(t *testing.T) {
 	m := testSyncFlowAtConfirm()
 	updated, cmd := m.updateEdgeConfirm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})

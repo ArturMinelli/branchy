@@ -49,9 +49,10 @@ type SyncFlowModel struct {
 	confirm     ConfirmModel
 	loading     LoadingModel
 	direction   sync.Direction
-	inbound     map[string]fileChangeCount
-	outbound    map[string]fileChangeCount
-	cancelled   bool
+	inbound        map[string]fileChangeCount
+	outbound       map[string]fileChangeCount
+	reloadSnapshot *countSnapshot
+	cancelled      bool
 	finished    bool
 	flowWindow
 }
@@ -108,9 +109,29 @@ func (m SyncFlowModel) applyFileCounts(in, out map[string]fileChangeCount) SyncF
 	return m.refreshCountSurfaces()
 }
 
-func (m SyncFlowModel) restoreReloadSnapshot() SyncFlowModel { return m }
+func (m SyncFlowModel) beginReload() SyncFlowModel {
+	if m.project == nil || m.reloadSnapshot != nil {
+		return m
+	}
+	m.reloadSnapshot = snapshotCounts(m.inbound, m.outbound)
+	m.inbound = nil
+	m.outbound = nil
+	return m.refreshCountSurfaces()
+}
 
-func (m SyncFlowModel) clearReloadSnapshot() SyncFlowModel { return m }
+func (m SyncFlowModel) restoreReloadSnapshot() SyncFlowModel {
+	if m.reloadSnapshot == nil {
+		return m
+	}
+	m.reloadSnapshot.Restore(&m.inbound, &m.outbound)
+	m.reloadSnapshot = nil
+	return m.refreshCountSurfaces()
+}
+
+func (m SyncFlowModel) clearReloadSnapshot() SyncFlowModel {
+	m.reloadSnapshot = nil
+	return m
+}
 
 func (m SyncFlowModel) activeCounts() map[string]fileChangeCount {
 	if m.direction == sync.Upward {
@@ -131,7 +152,11 @@ func (m SyncFlowModel) refreshCountSurfaces() SyncFlowModel {
 
 func (m SyncFlowModel) refreshPicker() SyncFlowModel {
 	idx := m.branchList.Index()
-	m.branchList = newBranchListWithBadges(m.project.Tree.Names(), "Select root branch to sync from", fileChangeBadges(m.activeCounts()))
+	badges := fileChangeBadges(m.activeCounts())
+	if m.reloadSnapshot != nil && m.activeCounts() == nil {
+		badges = reloadingBadges(m.project.Tree)
+	}
+	m.branchList = newBranchListWithBadges(m.project.Tree.Names(), "Select root branch to sync from", badges)
 	if m.width > 0 {
 		m.branchList.SetWidth(m.width)
 		m.branchList.SetHeight(m.height - 6)
@@ -234,9 +259,16 @@ func (m SyncFlowModel) Init() tea.Cmd {
 func (m SyncFlowModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case remoteUpdateMsg:
-		if msg.err != nil || m.project == nil || msg.projectID != m.project.ID {
+		if m.project == nil || msg.projectID != m.project.ID {
 			return m, nil
 		}
+		if msg.err != nil {
+			if m.reloadSnapshot != nil {
+				return m.restoreReloadSnapshot(), nil
+			}
+			return m, nil
+		}
+		m = m.clearReloadSnapshot()
 		return m.applyFileCounts(
 			loadInboundCounts(m.project.Path, m.project.Tree),
 			loadOutboundCounts(m.project.Path, m.project.Tree),
@@ -344,6 +376,7 @@ func (m SyncFlowModel) updatePickRoot(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if key.Matches(msg, syncKeys.Reload) {
 		if m.project != nil {
+			m = m.beginReload()
 			return m, remoteUpdateCmd(m.project)
 		}
 		return m, nil
@@ -515,6 +548,7 @@ func (m SyncFlowModel) updateEdgeConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if key.Matches(msg, syncKeys.Reload) {
 		if m.project != nil {
+			m = m.beginReload()
 			return m, remoteUpdateCmd(m.project)
 		}
 		return m, nil
