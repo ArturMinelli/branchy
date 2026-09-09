@@ -157,6 +157,10 @@ func (m Model) applyRemoteUpdate(msg remoteUpdateMsg) Model {
 			}
 			return m
 		}
+		if m.screen == screenSync && m.syncFlow.reloadSnapshot != nil {
+			m.syncFlow = m.syncFlow.restoreReloadSnapshot()
+			return m
+		}
 		if m.treeView.inbound == nil && m.treeView.outbound == nil {
 			return m.withFreshFileCounts()
 		}
