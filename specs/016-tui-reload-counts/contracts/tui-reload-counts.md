@@ -26,7 +26,7 @@ Defines the user-triggered reload of file-change counts via `r` on the main tree
 **Must not**:
 
 - Block keyboard input
-- Show loading spinner or status line
+- Show loading spinner or status line (badges may show `?` during reload — same as initial tree load)
 - Show fetch-failure message
 - Modify working tree or check out branches
 
@@ -45,6 +45,12 @@ Other help keys unchanged (`s`, `m`, `l`, `u`, direction chords, etc.).
 ---
 
 ## Refresh contract
+
+On manual reload start (`r`):
+
+- Save current inbound/outbound snapshot (if not already reloading)
+- Clear counts to nil so browse surfaces show `?` (tree badges, sync picker badges, confirm shows "File count unavailable")
+- Repeat `r` while in-flight: keep existing snapshot and `?` display; coalesce fetch
 
 On `remoteUpdateMsg` for the **current** project (same rules as 007):
 

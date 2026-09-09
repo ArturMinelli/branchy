@@ -106,7 +106,7 @@ A developer presses `r` while offline or when the default remote is unreachable.
 - Display rules from features 006 (parity diff display), 007 (lazy auto-fetch), and 008 (direction toggle) remain in force; this feature only adds an explicit user trigger.
 - Automatic background fetch on tree/sync open continues to exist; manual reload complements it rather than replacing it.
 - No periodic polling; `r` is strictly on-demand.
-- Manual reload stays silent while in progress — no spinner, status line, or error banner (same as automatic background fetch).
+- During reload, browse surfaces show `?` badges and sync confirm shows "File count unavailable"; no spinner, status line, or error banner (same global constraints as automatic background fetch).
 
 ## Decisions (Grilling Session 2026-09-04)
 
@@ -114,4 +114,4 @@ A developer presses `r` while offline or when the default remote is unreachable.
 |-------|----------|
 | Surfaces | Main tree and sync flow (root picker + edge confirm) |
 | In-flight fetch | Coalesce with existing update; one fetch, one refresh |
-| In-progress feedback | Silent — no loading indicator or status message |
+| In-progress feedback | `?` badges on browse surfaces and "File count unavailable" on sync confirm while reload is in flight |
