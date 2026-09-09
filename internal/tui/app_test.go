@@ -521,6 +521,32 @@ func TestSyncFollowsTreeOutbound(t *testing.T) {
 	}
 }
 
+func TestEmbeddedSyncReloadSuccessClearsSnapshot(t *testing.T) {
+	p := unlinkTestProject()
+	m := newModel([]*project.Project{p}, p)
+	m.treeView.setFileCounts(
+		map[string]fileChangeCount{"feature-a": {files: 5, ok: true}},
+		nil,
+	)
+	m.syncFlow = newSyncFlowModel(p, "", SyncFlowOptions{Embedded: true, Direction: sync.Downward})
+	m.syncFlow.inbound = map[string]fileChangeCount{"feature-a": {files: 5, ok: true}}
+	m.syncFlow = m.syncFlow.refreshPicker()
+	m.screen = screenSync
+	m.syncFlow = m.syncFlow.beginReload()
+	if m.syncFlow.reloadSnapshot == nil {
+		t.Fatal("beginReload must save sync reload snapshot")
+	}
+
+	updated, _ := m.Update(remoteUpdateMsg{projectID: p.ID, path: p.Path})
+	model := updated.(Model)
+	if model.syncFlow.reloadSnapshot != nil {
+		t.Fatal("embedded sync reload success must clear sync reload snapshot")
+	}
+	if model.syncFlow.inbound == nil {
+		t.Fatal("embedded sync reload success must refresh inbound counts")
+	}
+}
+
 func TestEmbeddedSyncReloadFailureRestoresViaApp(t *testing.T) {
 	p := unlinkTestProject()
 	m := newModel([]*project.Project{p}, p)

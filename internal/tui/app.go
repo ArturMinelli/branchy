@@ -34,18 +34,18 @@ func (i projectItem) FilterValue() string { return i.id + " " + i.path }
 
 // Model is the root Bubble Tea model.
 type Model struct {
-	screen      screen
-	width       int
-	height      int
-	projects    []*project.Project
-	projectList list.Model
-	treeView    BranchTreeView
-	current     *project.Project
-	direction   sync.Direction
-	syncFlow    SyncFlowModel
-	linkFlow    LinkFlowModel
-	unlinkFlow  UnlinkFlowModel
-	mrFlow      MRFlowModel
+	screen         screen
+	width          int
+	height         int
+	projects       []*project.Project
+	projectList    list.Model
+	treeView       BranchTreeView
+	current        *project.Project
+	direction      sync.Direction
+	syncFlow       SyncFlowModel
+	linkFlow       LinkFlowModel
+	unlinkFlow     UnlinkFlowModel
+	mrFlow         MRFlowModel
 	errMsg         string
 	quitting       bool
 	reloadSnapshot *countSnapshot
@@ -170,7 +170,7 @@ func (m Model) applyRemoteUpdate(msg remoteUpdateMsg) Model {
 	m = m.withFreshFileCounts()
 	if m.screen == screenSync {
 		m.syncFlow = m.syncFlow.applyFileCounts(m.treeView.inbound, m.treeView.outbound)
-		m.syncFlow.clearReloadSnapshot()
+		m.syncFlow = m.syncFlow.clearReloadSnapshot()
 	}
 	return m
 }

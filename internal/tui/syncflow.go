@@ -36,24 +36,24 @@ type SyncFlowOptions struct {
 
 // SyncFlowModel is a multi-step Bubble Tea model for interactive sync.
 type SyncFlowModel struct {
-	project     *project.Project
-	opts        SyncFlowOptions
-	fromBranch  string
-	edges       []tree.Edge
-	edgeIndex   int
-	results     []sync.Result
-	step        syncStep
-	errMsg      string
-	browserWarn string
-	branchList  list.Model
-	confirm     ConfirmModel
-	loading     LoadingModel
-	direction   sync.Direction
+	project        *project.Project
+	opts           SyncFlowOptions
+	fromBranch     string
+	edges          []tree.Edge
+	edgeIndex      int
+	results        []sync.Result
+	step           syncStep
+	errMsg         string
+	browserWarn    string
+	branchList     list.Model
+	confirm        ConfirmModel
+	loading        LoadingModel
+	direction      sync.Direction
 	inbound        map[string]fileChangeCount
 	outbound       map[string]fileChangeCount
 	reloadSnapshot *countSnapshot
 	cancelled      bool
-	finished    bool
+	finished       bool
 	flowWindow
 }
 
