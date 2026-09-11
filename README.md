@@ -2,17 +2,101 @@
 
 Local CLI for visualizing branch hierarchies and creating GitLab merge requests along parent→child edges.
 
+## Getting started
+
+1. Install [Go](https://go.dev/) 1.26+ and [glab](https://gitlab.com/gitlab-org/cli), then run `glab auth login`.
+2. Clone and install branchy (see [Install](#install)).
+3. In a GitLab git repo, run `branchy init` (see [Set up a git repo](#set-up-a-git-repo)).
+4. Run `branchy` to open the branch tree TUI.
+
 ## Prerequisites
 
-- [Go](https://go.dev/) 1.22+
-- [glab](https://gitlab.com/gitlab-org/cli) (authenticated: `glab auth login`)
+- [Go](https://go.dev/) 1.26+
+- [glab](https://gitlab.com/gitlab-org/cli) — install it and authenticate once with `glab auth login`
+- A git repository whose `origin` remote points at GitLab (branchy uses glab to create merge requests)
 
 ## Install
 
-From this directory:
+```bash
+git clone https://github.com/ArturMinelli/branchy.git
+cd branchy
+go install ./cmd/branchy
+```
+
+Make sure `$HOME/go/bin` (or your `GOPATH/bin`) is on your `PATH`, then verify:
 
 ```bash
-go install ./cmd/branchy
+branchy --help
+```
+
+## Set up a git repo
+
+branchy does not add config files to your application repository. Registration links your repo path to a local project entry and branch tree under `~/.config/branchy/`.
+
+### 1. Register the repo
+
+From the root of your git checkout:
+
+```bash
+branchy init
+```
+
+In a terminal (TTY), this opens a registration wizard. For scripted use:
+
+```bash
+branchy init --force   # re-import branch tree for an already registered repo
+```
+
+On first registration, branchy:
+
+- Detects the git root and records it in `~/.config/branchy/index.yaml`
+- Imports an existing team tree from `repo/branch-tree.yaml` if that file is present
+- Otherwise scaffolds a minimal tree with a single `main` branch
+
+### 2. (Optional) Share a branch tree with your team
+
+Teams can commit a seed file at `repo/branch-tree.yaml` in the application repo. When a teammate runs `branchy init`, branchy imports that file into their local `~/.config/branchy/` store.
+
+Example `repo/branch-tree.yaml`:
+
+```yaml
+branches:
+  develop:
+    children:
+      - feature-a
+  feature-a:
+    children:
+      - feature-b
+  feature-b:
+    children: []
+```
+
+After import, each developer's working copy of the tree lives locally. Edits made with `branchy link` / `branchy unlink` (or the TUI) are saved under `~/.config/branchy/`, not back into the repo. Re-run `branchy init --force` to pull in an updated `repo/branch-tree.yaml`.
+
+### 3. Build the branch tree
+
+Add parent→child edges for branches you want to sync or open MRs between:
+
+```bash
+branchy link develop feature-a
+```
+
+Or press `l` in the main TUI. Linking updates the local branch tree only — it does not create git branches.
+
+### 4. Open the TUI
+
+From anywhere inside the registered repo:
+
+```bash
+branchy
+```
+
+If you have multiple registered projects, branchy auto-selects the project matching the current directory.
+
+List registered projects:
+
+```bash
+branchy projects
 ```
 
 ## Config
@@ -27,19 +111,9 @@ branchy stores everything under `~/.config/branchy/`:
         └── branch-tree.yaml
 ```
 
-No config files live inside application repos.
+The index maps project IDs to local git checkout paths. The branch tree defines which branches exist and how they relate. Optional `repo/branch-tree.yaml` in a git repo is only read during `branchy init` (or `init --force`).
 
 ## Usage
-
-### Register a project
-
-Inside a git repository:
-
-```bash
-branchy init
-```
-
-Imports `repo/branch-tree.yaml` if present, otherwise scaffolds a minimal tree. In a TTY, `branchy init` opens a registration wizard; `branchy init --force` stays plain CLI.
 
 ### TUI (default)
 
